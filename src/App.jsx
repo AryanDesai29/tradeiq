@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import ChartView from "./ChartView.jsx";
+import Login from "./Login.jsx";
 import { createClient } from "@supabase/supabase-js";
 
 // ─── SUPABASE — public anon key is safe in frontend ───────────────
@@ -22,7 +23,8 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   console.warn("[TradeIQ] Supabase env vars missing — running without cloud sync. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Vercel → Settings → Environment Variables.");
 }
 
-const db = (SUPABASE_URL && SUPABASE_ANON_KEY)
+const SUPABASE_READY = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
+const db = SUPABASE_READY
   ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
   : makeOfflineDb();
 
@@ -136,10 +138,11 @@ const LS = {
 };
 
 // ─── MAIN APP ─────────────────────────────────────────────────────
-export default function TradeIQ() {
+function TradeIQ({ session }) {
+  const userId = session?.user?.id || "local";
   const [tab,setTab]           = useState("dash");
-  const [holdings,setHoldings] = useState(()=>LS.load("tradeiq_holdings_backup",[]));
-  const [journal,setJournal]   = useState(()=>LS.load("tradeiq_journal_backup",[]));
+  const [holdings,setHoldings] = useState(()=>LS.load(`tradeiq_holdings_backup_${userId}`,[]));
+  const [journal,setJournal]   = useState(()=>LS.load(`tradeiq_journal_backup_${userId}`,[]));
   const [syncStatus,setSS]     = useState("idle");
   const [msgs,setMsgs]         = useState([{role:"assistant",content:"👋 Welcome to TradeIQ!\n\nYour data syncs across all devices automatically.\n\n📌 Getting started:\n1. Add your Vested holdings in Dashboard\n2. Ask the AI anything in the AI Advisor tab\n3. Log your trades in the Journal\n\nEverything saves instantly — phone, laptop, any browser. 🚀"}]);
   const [chatInput,setChatInput]   = useState("");
@@ -185,8 +188,8 @@ export default function TradeIQ() {
   },[]);
 
   // Mirror holdings/journal to localStorage so data survives a Supabase outage
-  useEffect(()=>{ LS.save("tradeiq_holdings_backup", holdings); },[holdings]);
-  useEffect(()=>{ LS.save("tradeiq_journal_backup", journal); },[journal]);
+  useEffect(()=>{ LS.save(`tradeiq_holdings_backup_${userId}`, holdings); },[holdings,userId]);
+  useEffect(()=>{ LS.save(`tradeiq_journal_backup_${userId}`, journal); },[journal,userId]);
 
   const mergeList=(base)=>base.map(w=>{const live=liveData[w.ticker];return{...w,price:live?.price??null,chg:live?.chg??0,rsi:live?.rsi??50,ema20:live?.ema20??null,ema200:live?.ema200??null,spark:live?.spark??[],currency:live?.currency??(w.ticker.endsWith(".NS")?"INR":"USD")};}).filter(w=>w.price!==null);
   const US_WATCHLIST=mergeList([...US_BASE,...customUS.map(t=>({ticker:t,name:t}))]);
@@ -196,6 +199,10 @@ export default function TradeIQ() {
 
   const loadAll = async()=>{
     setSS("syncing");
+    // Ensure a preferences row exists for this user (best-effort, non-blocking)
+    if (SUPABASE_READY && session) {
+      db.from("tradeiq_profiles").upsert({ user_id: userId }, { onConflict: "user_id", ignoreDuplicates: true });
+    }
     try {
       const [{data:h},{data:j}] = await Promise.all([
         db.from("tradeiq_holdings").select("*").order("created_at",{ascending:true}),
@@ -218,7 +225,7 @@ export default function TradeIQ() {
   // ── DB ops ──
   const addHolding = async()=>{
     if(!newH.ticker||!newH.avgCost) return; setSS("syncing");
-    const {data,error}=await db.from("tradeiq_holdings").insert({ticker:newH.ticker.toUpperCase(),name:newH.name,shares:+newH.shares||0,avg_cost:+newH.avgCost,price:+(newH.price||newH.avgCost),sector:newH.sector}).select().single();
+    const {data,error}=await db.from("tradeiq_holdings").insert({user_id:userId,ticker:newH.ticker.toUpperCase(),name:newH.name,shares:+newH.shares||0,avg_cost:+newH.avgCost,price:+(newH.price||newH.avgCost),sector:newH.sector}).select().single();
     if(!error&&data){setHoldings(p=>[...p,{id:data.id,ticker:data.ticker,name:data.name,shares:+data.shares,avgCost:+data.avg_cost,price:+data.price,sector:data.sector}]);setNewH({ticker:"",name:"",shares:"",avgCost:"",price:"",sector:"Tech"});setShowAddH(false);}
     setSS(error?"error":"synced");
   };
@@ -226,7 +233,7 @@ export default function TradeIQ() {
   const updatePrice=async(id,price)=>{const p=parseFloat(price);if(isNaN(p))return;setSS("syncing");await db.from("tradeiq_holdings").update({price:p,updated_at:new Date().toISOString()}).eq("id",id);setHoldings(prev=>prev.map(h=>h.id===id?{...h,price:p}:h));setSS("synced");};
   const addTrade=async()=>{
     if(!newT.ticker||!newT.entry)return;setSS("syncing");
-    const {data,error}=await db.from("tradeiq_journal").insert({ticker:newT.ticker.toUpperCase(),side:newT.side,entry_price:+newT.entry||null,shares:+newT.shares||null,stop_loss:+newT.stop||null,target:+newT.target||null,strategy:newT.strategy,notes:newT.notes,trade_date:newT.date,closed:false}).select().single();
+    const {data,error}=await db.from("tradeiq_journal").insert({user_id:userId,ticker:newT.ticker.toUpperCase(),side:newT.side,entry_price:+newT.entry||null,shares:+newT.shares||null,stop_loss:+newT.stop||null,target:+newT.target||null,strategy:newT.strategy,notes:newT.notes,trade_date:newT.date,closed:false}).select().single();
     if(!error&&data){setJournal(p=>[{id:data.id,ticker:data.ticker,side:data.side,entry:String(data.entry_price||""),exit:null,shares:String(data.shares||""),stop:String(data.stop_loss||""),target:String(data.target||""),strategy:data.strategy,notes:data.notes,date:data.trade_date,closed:false},...p]);setNewT({ticker:"",side:"BUY",entry:"",stop:"",target:"",shares:"",strategy:"EMA Pullback",notes:"",date:new Date().toISOString().split("T")[0]});setShowAddT(false);}
     setSS(error?"error":"synced");
   };
@@ -250,8 +257,11 @@ RULES: Capital ₹5,000. Max 2% risk per trade. Always stop-loss. Min 1:2 R:R. N
     const userMsg={role:"user",content:chatInput.trim()};
     setMsgs(p=>[...p,userMsg]);setChatInput("");setAiLoading(true);
     try{
+      // Attach the Supabase session token so /api/chat can verify the caller
+      let token=null;
+      if(SUPABASE_READY){ try{ const {data}=await db.auth.getSession(); token=data.session?.access_token??null; }catch{} }
       // Calls Vercel serverless function — Groq key never leaves server
-      const res=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:[...msgs,userMsg].slice(-12).map(m=>({role:m.role,content:m.content})),systemPrompt:systemPrompt()})});
+      const res=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:`Bearer ${token}`}:{})},body:JSON.stringify({messages:[...msgs,userMsg].slice(-12).map(m=>({role:m.role,content:m.content})),systemPrompt:systemPrompt()})});
       const data=await res.json();
       if(data.error)throw new Error(data.error);
       setMsgs(p=>[...p,{role:"assistant",content:data.reply}]);
@@ -528,6 +538,7 @@ RULES: Capital ₹5,000. Max 2% risk per trade. Always stop-loss. Min 1:2 R:R. N
           <div style={{textAlign:"right"}}><div style={{fontSize:8,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em"}}>Portfolio</div><div style={{fontFamily:C.display,fontWeight:700,color:C.accent,fontSize:14}}>{holdings.length===0?"₹0":`$${f(totalVal)}`}{holdings.length>0&&<span style={{fontSize:9,color:C.muted}}> / ₹{f(totalVal*84,0)}</span>}</div></div>
           {holdings.length>0&&<div style={{fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:4,background:pc(totalPnL)+"18",color:pc(totalPnL),border:`1px solid ${pc(totalPnL)}28`}}>{ps(totalPnL)}${f(Math.abs(totalPnL))} ({ps(pnlPct)}{f(pnlPct)}%)</div>}
           <Btn small color={C.muted} onClick={loadAll}>{syncStatus==="syncing"?<Spinner/>:"⟳"}</Btn>
+          {SUPABASE_READY&&session&&<Btn small color={C.muted} onClick={()=>db.auth.signOut()}>Sign out</Btn>}
         </div>
       </div>
       <div style={{display:"flex",gap:0,borderBottom:`1px solid ${C.border}`,background:C.s1,overflowX:"auto"}}>
@@ -538,4 +549,31 @@ RULES: Capital ₹5,000. Max 2% risk per trade. Always stop-loss. Min 1:2 R:R. N
       </div>
     </div>
   );
+}
+
+// ─── AUTH GATE ────────────────────────────────────────────────────
+function Splash({ label = "Loading…" }) {
+  return (
+    <div style={{ minHeight: "100vh", background: C.bg, color: C.muted, fontFamily: C.mono, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <span style={{ fontFamily: C.display, fontWeight: 700, fontSize: 13 }}>{label}</span>
+    </div>
+  );
+}
+
+export default function App() {
+  const [session, setSession] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  useEffect(() => {
+    if (!SUPABASE_READY) { setAuthLoading(false); return; }
+    db.auth.getSession().then(({ data }) => { setSession(data.session); setAuthLoading(false); });
+    const { data: sub } = db.auth.onAuthStateChange((_e, s) => setSession(s));
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  // No Supabase configured → local-only mode (localStorage, no login required)
+  if (!SUPABASE_READY) return <TradeIQ session={null} />;
+  if (authLoading) return <Splash />;
+  if (!session) return <Login onSignIn={() => db.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.origin } })} />;
+  return <TradeIQ session={session} />;
 }
