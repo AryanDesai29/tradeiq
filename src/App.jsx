@@ -51,18 +51,59 @@ const RSIMeter=({value=50})=>{const v=Math.min(100,Math.max(0,value));const col=
 const Dots=()=>(<div style={{display:"flex",gap:5,padding:"4px 0",alignItems:"center"}}>{[1,2,3].map(i=><div key={i} className={`d${i}`} style={{width:6,height:6,borderRadius:"50%",background:C.accent}}/>)}<span style={{fontSize:10,color:C.muted,marginLeft:4}}>Thinking…</span></div>);
 const Spinner=()=><div className="spin" style={{width:14,height:14,border:`2px solid ${C.accent}30`,borderTop:`2px solid ${C.accent}`,borderRadius:"50%",display:"inline-block"}}/>;
 
-// ─── WATCHLIST BASE (prices fetched live from /api/prices) ──────────
-const WATCHLIST_BASE=[
-  {ticker:"NVDA",name:"NVIDIA"},  {ticker:"TSLA",name:"Tesla"},
-  {ticker:"AAPL",name:"Apple"},   {ticker:"META",name:"Meta"},
-  {ticker:"GOOGL",name:"Alphabet"},{ticker:"AMD",name:"AMD"},
+// ─── WATCHLIST BASE DATA ─────────────────────────────────────────
+const US_BASE=[
+  {ticker:"NVDA",name:"NVIDIA"},{ticker:"TSLA",name:"Tesla"},{ticker:"AAPL",name:"Apple"},
+  {ticker:"META",name:"Meta"},{ticker:"GOOGL",name:"Alphabet"},{ticker:"AMD",name:"AMD"},
   {ticker:"MSFT",name:"Microsoft"},{ticker:"PLTR",name:"Palantir"},
+  {ticker:"AMZN",name:"Amazon"},{ticker:"NFLX",name:"Netflix"},
+  {ticker:"SPY",name:"S&P 500 ETF"},{ticker:"QQQ",name:"Nasdaq ETF"},
+];
+const INDIA_BASE=[
+  {ticker:"RELIANCE.NS",name:"Reliance"},{ticker:"TCS.NS",name:"TCS"},
+  {ticker:"HDFCBANK.NS",name:"HDFC Bank"},{ticker:"INFY.NS",name:"Infosys"},
+  {ticker:"ICICIBANK.NS",name:"ICICI Bank"},{ticker:"HINDUNILVR.NS",name:"HUL"},
+  {ticker:"SBIN.NS",name:"SBI"},{ticker:"BAJFINANCE.NS",name:"Bajaj Finance"},
+  {ticker:"WIPRO.NS",name:"Wipro"},{ticker:"AXISBANK.NS",name:"Axis Bank"},
+  {ticker:"TATAMOTORS.NS",name:"Tata Motors"},{ticker:"ADANIENT.NS",name:"Adani Ent"},
 ];
 const STRATEGIES=[
   {id:"ema",name:"EMA Pullback",type:"Swing",winRate:68,rr:"1:2.5",color:C.accent,rules:"Price above 200 EMA. Pullback to 20 EMA zone. RSI 40–58. Bullish reversal candle. Stop below swing low. Target: previous high."},
   {id:"bo",name:"Breakout Consolidation",type:"Momentum",winRate:55,rr:"1:3",color:C.gold,rules:"15+ days sideways, range under 10%. Breakout volume 50%+ above 20-day avg. Sector ETF in uptrend. Entry: breakout candle close."},
   {id:"dca",name:"DCA Index ETF",type:"Long-term",winRate:88,rr:"1:5+",color:C.green,rules:"Buy fixed ₹ of Nifty BeES / SPY weekly. No stop-loss. Hold 12+ months. Reinvest dividends. Never time the market."},
 ];
+
+
+// ─── MARKET HEADER ───────────────────────────────────────────────
+function MarketHeader({marketTab,setMarketTab,priceStatus,fetchPrices,lastUpdated}){
+  const [,setT]=React.useState(0);
+  React.useEffect(()=>{const iv=setInterval(()=>setT(p=>p+1),1000);return()=>clearInterval(iv);},[]);
+  const C2={accent:"#00e5ff",blue:"#2979ff",gold:"#ffab40",green:"#69f0ae",red:"#ff5252",text:"#dde8f5",muted:"#3d5a73",s1:"#0b1119",s2:"#0f1824",border:"#1c2d3d",display:"'Syne',sans-serif",mono:"'JetBrains Mono',monospace"};
+  const fmt=(tz)=>new Date().toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:true,timeZone:tz});
+  const fmtD=(tz)=>new Date().toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric",timeZone:tz});
+  const isUSOpen=()=>{const n=new Date(),ny=new Date(n.toLocaleString("en-US",{timeZone:"America/New_York"})),d=ny.getDay(),m=ny.getHours()*60+ny.getMinutes();return d>=1&&d<=5&&m>=570&&m<960;};
+  const isINOpen=()=>{const n=new Date(),ist=new Date(n.toLocaleString("en-US",{timeZone:"Asia/Kolkata"})),d=ist.getDay(),m=ist.getHours()*60+ist.getMinutes();return d>=1&&d<=5&&m>=555&&m<930;};
+  const mkts=[{id:"us",flag:"🇺🇸",label:"US Markets",tz:"America/New_York",open:isUSOpen(),hours:"9:30AM–4PM ET",col:C2.blue},{id:"india",flag:"🇮🇳",label:"India NSE",tz:"Asia/Kolkata",open:isINOpen(),hours:"9:15AM–3:30PM IST",col:C2.gold}];
+  return(<div style={{marginBottom:14}}>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+      {mkts.map(m=>(<div key={m.id} onClick={()=>setMarketTab(m.id)} style={{background:marketTab===m.id?C2.s2:C2.s1,border:`1px solid ${marketTab===m.id?m.col+"50":C2.border}`,borderRadius:7,padding:"10px 12px",cursor:"pointer",transition:"all 0.15s"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+          <span style={{fontFamily:C2.display,fontWeight:700,fontSize:11,color:marketTab===m.id?m.col:C2.muted}}>{m.flag} {m.label}</span>
+          <span style={{fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:3,background:m.open?C2.green+"18":C2.red+"18",color:m.open?C2.green:C2.red}}>{m.open?"● OPEN":"● CLOSED"}</span>
+        </div>
+        <div style={{fontFamily:C2.mono,fontSize:15,fontWeight:700,color:marketTab===m.id?C2.text:C2.muted,letterSpacing:"0.04em"}}>{fmt(m.tz)}</div>
+        <div style={{fontSize:9,color:C2.muted,marginTop:2}}>{fmtD(m.tz)} · {m.hours}</div>
+      </div>))}
+    </div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+      <div style={{fontFamily:C2.display,fontWeight:700,fontSize:10,letterSpacing:"0.12em",textTransform:"uppercase",color:C2.muted}}>
+        {marketTab==="us"?"US Watchlist":"Indian Watchlist"} — {priceStatus==="live"?"● Live":priceStatus==="loading"?"Fetching…":"Cached"}
+        {lastUpdated&&<span style={{marginLeft:6,fontWeight:400}}>· {lastUpdated.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}</span>}
+      </div>
+      <button onClick={fetchPrices} disabled={priceStatus==="loading"} style={{fontSize:10,color:priceStatus==="loading"?C2.muted:C2.accent,background:"none",border:`1px solid ${priceStatus==="loading"?C2.muted:C2.accent}35`,borderRadius:4,padding:"3px 9px",cursor:priceStatus==="loading"?"not-allowed":"pointer",fontFamily:C2.display,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em"}}>{priceStatus==="loading"?"…":"↻"}</button>
+    </div>
+  </div>);
+}
 
 // ─── MAIN APP ─────────────────────────────────────────────────────
 export default function TradeIQ() {
@@ -78,7 +119,14 @@ export default function TradeIQ() {
   const [newH,setNewH] = useState({ticker:"",name:"",shares:"",avgCost:"",price:"",sector:"Tech"});
   const [newT,setNewT] = useState({ticker:"",side:"BUY",entry:"",stop:"",target:"",shares:"",strategy:"EMA Pullback",notes:"",date:new Date().toISOString().split("T")[0]});
   const [calcE,setCalcE]=useState(""); const [calcS,setCalcS]=useState(""); const [calcR,setCalcR]=useState("2"); const [calcRes,setCalcRes]=useState(null);
-  const [liveData,setLiveData] = useState({});
+  const [marketTab,setMarketTab]=useState("us");
+  const [customUS,setCustomUS]=useState([]);
+  const [customIndia,setCustomIndia]=useState([]);
+  const [addTickerInput,setAddTickerInput]=useState("");
+  const [showAddTicker,setShowAddTicker]=useState(false);
+  const [liveData,setLiveData]=useState({});
+  const [priceStatus,setPriceStatus]=useState("loading");
+  const [lastUpdated,setLastUpdated]=useState(null);
   const [priceStatus,setPriceStatus] = useState("loading");
   const [lastUpdated,setLastUpdated] = useState(null);
   const chatEnd = useRef(null);
@@ -106,20 +154,11 @@ export default function TradeIQ() {
     return () => clearInterval(interval);
   },[]);
 
-  // Merge live data into watchlist
-  const WATCHLIST = WATCHLIST_BASE.map(w => {
-    const live = liveData[w.ticker];
-    return {
-      ...w,
-      price: live?.price ?? null,
-      chg: live?.chg ?? 0,
-      rsi: live?.rsi ?? 50,
-      ema20: live?.ema20 ?? null,
-      ema200: live?.ema200 ?? null,
-      spark: live?.spark ?? [],
-      volume: live?.volume ?? null,
-    };
-  }).filter(w => w.price !== null);
+  const mergeList=(base)=>base.map(w=>{const live=liveData[w.ticker];return{...w,price:live?.price??null,chg:live?.chg??0,rsi:live?.rsi??50,ema20:live?.ema20??null,ema200:live?.ema200??null,spark:live?.spark??[],currency:live?.currency??(w.ticker.endsWith(".NS")?"INR":"USD")};}).filter(w=>w.price!==null);
+  const US_WATCHLIST=mergeList([...US_BASE,...customUS.map(t=>({ticker:t,name:t}))]);
+  const INDIA_WATCHLIST=mergeList([...INDIA_BASE,...customIndia.map(t=>({ticker:t,name:t}))]);
+  const WATCHLIST=marketTab==="us"?US_WATCHLIST:INDIA_WATCHLIST;
+  const addCustomTicker=()=>{const t=addTickerInput.trim().toUpperCase();if(!t)return;if(marketTab==="india"){const tk=t.endsWith(".NS")?t:t+".NS";setCustomIndia(p=>[...new Set([...p,tk])]);}else setCustomUS(p=>[...new Set([...p,t])]);setAddTickerInput("");setShowAddTicker(false);setTimeout(fetchPrices,500);};
 
   const loadAll = async()=>{
     setSS("syncing");
@@ -166,7 +205,7 @@ export default function TradeIQ() {
 PORTFOLIO ($${f(totalVal)} / ₹${f(totalVal*84,0)}):
 ${holdings.length===0?"Empty":holdings.map(h=>{const pnl=(h.price-h.avgCost)*h.shares;return`  ${h.ticker}: ${h.shares} shares avg $${h.avgCost} now $${h.price} P&L:${ps(pnl)}$${f(Math.abs(pnl))}`;}).join("\n")}
 
-WATCHLIST (LIVE): ${WATCHLIST.length>0?WATCHLIST.map(w=>`${w.ticker}($${w.price} RSI:${w.rsi} EMA20:$${w.ema20??"N/A"})`).join(", "):"Loading live prices..."}
+MARKET: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}\nUS: ${US_WATCHLIST.slice(0,5).map(w=>`${w.ticker}($${w.price?.toFixed(2)} RSI:${w.rsi})`).join(", ")||"loading"}\nINDIA: ${INDIA_WATCHLIST.slice(0,5).map(w=>`${w.ticker.replace(".NS","")}(Rs${w.price?.toFixed(0)} RSI:${w.rsi})`).join(", ")||"loading"}
 JOURNAL: ${journal.length} trades, ${journal.filter(t=>t.closed).length} closed
 STRATEGIES: EMA Pullback (68% win 1:2.5), Breakout (55% win 1:3), DCA ETF (88% win)
 
@@ -188,13 +227,7 @@ RULES: Capital ₹5,000. Max 2% risk per trade. Always stop-loss. Min 1:2 R:R. N
 
   const quickAsk=(q)=>{setChatInput(q);setTab("ai");setTimeout(()=>document.getElementById("tiq-in")?.focus(),150);};
 
-  const scanResults=WATCHLIST.map(w=>{
-    const nearEma=Math.abs(w.price-w.ema20)/w.ema20<0.025;
-    const sig=(nearEma&&w.price>w.ema200&&w.rsi>=38&&w.rsi<=60)?"EMA PULLBACK":(w.price>w.ema200&&w.rsi>58&&w.rsi<72)?"BREAKOUT WATCH":"WAIT";
-    const sigC=sig==="EMA PULLBACK"?C.green:sig==="BREAKOUT WATCH"?C.gold:C.muted;
-    const cap=totalVal||59;
-    return{...w,signal:sig,sigColor:sigC,posSize:f(cap*0.02/(w.price*0.025),3),stopPrice:f(w.price*0.975),targetPrice:f(w.price*1.06)};
-  }).sort((a,b)=>(b.signal==="EMA PULLBACK"?1:0)-(a.signal==="EMA PULLBACK"?1:0));
+  const scanResults=WATCHLIST.filter(w=>w.price&&w.ema20&&w.ema200).map(w=>{const nearEma=Math.abs(w.price-w.ema20)/w.ema20<0.03;const sig=(nearEma&&w.price>w.ema200&&w.rsi>=38&&w.rsi<=62)?"EMA PULLBACK":(w.price>w.ema200&&w.rsi>60&&w.rsi<75)?"BREAKOUT WATCH":"WAIT";const sigC=sig==="EMA PULLBACK"?C.green:sig==="BREAKOUT WATCH"?C.gold:C.muted;const curr=w.currency==="INR"?"₹":"$";const cap=w.currency==="INR"?(totalVal||59)*84:(totalVal||59);return{...w,signal:sig,sigColor:sigC,curr,posSize:f(cap*0.02/(w.price*0.025),3),stopPrice:curr+f(w.price*0.975,w.currency==="INR"?0:2),targetPrice:curr+f(w.price*1.06,w.currency==="INR"?0:2)};}).sort((a,b)=>(b.signal==="EMA PULLBACK"?1:0)-(a.signal==="EMA PULLBACK"?1:0));
 
   const syncLabel={idle:"",syncing:"⟳ Syncing",synced:"✓ Synced",error:"⚠ Error"};
   const syncColor={idle:C.muted,syncing:C.gold,synced:C.green,error:C.red};
@@ -240,19 +273,17 @@ RULES: Capital ₹5,000. Max 2% risk per trade. Always stop-loss. Min 1:2 R:R. N
           <div style={{fontSize:9,color:C.muted,marginTop:8}}>↑ Click row → AI. Update price field → saves everywhere.</div>
         </Card>
         <Card>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-            <CT style={{marginBottom:0}}>Watchlist — {priceStatus==="live"?"Live Prices":priceStatus==="loading"?"Fetching Prices..":"Cached Prices"}</CT>
-            <Btn small color={priceStatus==="loading"?C.muted:C.accent} onClick={fetchPrices}>{priceStatus==="loading"?<Spinner/>:"↻ Refresh"}</Btn>
-          </div>
+          <MarketHeader marketTab={marketTab} setMarketTab={setMarketTab} priceStatus={priceStatus} fetchPrices={fetchPrices} lastUpdated={lastUpdated}/>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}><thead><tr>{["Stock","Price","RSI","Signal",""].map(h=>(<th key={h} style={{textAlign:"left",padding:"6px 5px",fontSize:9,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:C.muted,borderBottom:`1px solid ${C.border}`}}>{h}</th>))}</tr></thead>
-          <tbody>{WATCHLIST.slice(0,6).map(w=>{const sc=scanResults.find(s=>s.ticker===w.ticker);return(
-            <tr key={w.ticker} className="tiq-row" style={{cursor:"pointer"}} onClick={()=>quickAsk(`Analyse ${w.ticker} at $${w.price} RSI ${w.rsi} EMA20 $${w.ema20}. EMA Pullback entry, stop, target and position size?`)}>
-              <td style={{padding:"7px 5px"}}><div style={{fontFamily:C.display,fontWeight:700}}>{w.ticker}</div><div style={{fontSize:9,color:w.chg>=0?C.green:C.red}}>{ps(w.chg)}{w.chg}%</div></td>
-              <td style={{padding:"7px 5px",fontWeight:600}}>${w.price}</td>
+          <tbody>{WATCHLIST.slice(0,8).map(w=>{const sc=scanResults.find(s=>s.ticker===w.ticker);const sym=w.ticker.replace(".NS","");const curr=w.currency==="INR"?"₹":"$";const dp=w.currency==="INR"?0:2;return(
+            <tr key={w.ticker} className="tiq-row" style={{cursor:"pointer"}} onClick={()=>quickAsk(`Analyse ${w.ticker} (${w.name}) at ${curr}${w.price}. RSI ${w.rsi}. Best strategy for ${marketTab==="india"?"Indian NSE":"US"} market? Entry, stop, target, position size for ₹5,000.`)}>
+              <td style={{padding:"7px 5px"}}><div style={{fontFamily:C.display,fontWeight:700,fontSize:12}}>{sym}</div><div style={{fontSize:9,color:w.chg>=0?C.green:C.red}}>{ps(w.chg)}{w.chg}%</div></td>
+              <td style={{padding:"7px 5px",fontWeight:600}}>{curr}{w.price?.toFixed(dp)}</td>
               <td style={{padding:"7px 5px"}}><RSIMeter value={w.rsi}/></td>
               <td style={{padding:"7px 5px"}}><Tag c={sc?.sigColor||C.muted}>{sc?.signal||"WAIT"}</Tag></td>
               <td style={{padding:"7px 5px"}}><Sparkline data={w.spark} color={w.chg>=0?C.green:C.red} w={55} h={22}/></td>
             </tr>);})}</tbody></table>
+          <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${C.border}`}}>{showAddTicker?(<div style={{display:"flex",gap:8}}><input className="tiq-input" value={addTickerInput} onChange={e=>setAddTickerInput(e.target.value.toUpperCase())} placeholder={marketTab==="india"?"e.g. WIPRO (auto .NS)":"e.g. COIN"} onKeyDown={e=>e.key==="Enter"&&addCustomTicker()} style={{flex:1,background:C.s2,border:`1px solid ${C.border}`,borderRadius:5,padding:"6px 10px",color:C.text,fontFamily:C.mono,fontSize:11}}/><Btn small solid color={C.accent} onClick={addCustomTicker}>Add</Btn><Btn small color={C.muted} onClick={()=>setShowAddTicker(false)}>✕</Btn></div>):(<button onClick={()=>setShowAddTicker(true)} style={{fontSize:10,color:C.muted,background:"none",border:"none",cursor:"pointer",fontFamily:C.mono}}>+ Add {marketTab==="india"?"Indian":"US"} stock</button>)}</div>
         </Card>
       </div>
       <Card><CT>Quick AI Actions</CT><div style={{display:"flex",flexWrap:"wrap",gap:7}}>{[["Analyse my full portfolio and give me a risk report",C.accent],["Best trade setup from my watchlist today?",C.accent],["How do I grow ₹5,000 to ₹8,000 safely in 3 months?",C.green],["Position size: TSLA entry $248 stop $238",C.gold],["Build a new strategy for volatile tech stocks",C.purple],["Should I buy NVDA now or wait for a pullback?",C.blue]].map(([q,col])=>(<button key={q} className="qbtn tiq-btn" onClick={()=>quickAsk(q)} style={{background:col+"12",border:`1px solid ${col}25`,borderRadius:5,color:col,fontFamily:C.mono,fontSize:10,padding:"6px 11px"}}>{q}</button>))}</div></Card>
@@ -324,9 +355,13 @@ RULES: Capital ₹5,000. Max 2% risk per trade. Always stop-loss. Min 1:2 R:R. N
 
   // ── SCANNER ──
   const Scanner=()=>(<div>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-      <div><div style={{fontFamily:C.display,fontWeight:700,fontSize:15,marginBottom:2}}>Strategy Scanner</div><div style={{fontSize:11,color:C.muted}}>Watchlist screened against your strategies</div></div>
-      <Btn color={C.gold} onClick={()=>quickAsk(`Scan watchlist: ${WATCHLIST.map(w=>`${w.ticker} $${w.price} RSI:${w.rsi}`).join(", ")}. For each qualifying stock give entry, stop, target, position size for ₹5,000.`)}>AI Deep Scan →</Btn>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
+      <div><div style={{fontFamily:C.display,fontWeight:700,fontSize:15,marginBottom:2}}>Strategy Scanner</div><div style={{fontSize:11,color:C.muted}}>Screening {marketTab==="us"?"US (NYSE/NASDAQ)":"Indian (NSE)"} — {WATCHLIST.length} stocks</div></div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <Btn small color={marketTab==="us"?C.blue:C.muted} onClick={()=>setMarketTab("us")}>🇺🇸 US</Btn>
+        <Btn small color={marketTab==="india"?C.gold:C.muted} onClick={()=>setMarketTab("india")}>🇮🇳 India</Btn>
+        <Btn color={C.gold} onClick={()=>quickAsk(`Scan ${marketTab==="india"?"Indian NSE":"US"} watchlist: ${WATCHLIST.map(w=>`${w.ticker.replace(".NS","")} ${w.currency==="INR"?"Rs":"$"}${w.price} RSI:${w.rsi}`).join(", ")}. Best strategy, entry, stop, target, position size for ₹5,000 each.`)}>AI Deep Scan →</Btn>
+      </div>
     </div>
     <Card><table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}><thead><tr>{["Stock","Price","EMA20","EMA200","RSI","Signal","Stop","Target","Pos Size"].map(h=>(<th key={h} style={{textAlign:"left",padding:"7px 6px",fontSize:9,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:C.muted,borderBottom:`1px solid ${C.border}`}}>{h}</th>))}</tr></thead>
     <tbody>{scanResults.map(w=>(<tr key={w.ticker} className="tiq-row" style={{cursor:"pointer"}} onClick={()=>quickAsk(`Full analysis: ${w.ticker} $${w.price} RSI ${w.rsi} EMA20 $${w.ema20} EMA200 $${w.ema200}. Signal: ${w.signal}. Exact entry, stop, target, shares for ₹5,000.`)}>
