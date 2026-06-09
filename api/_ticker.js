@@ -3,7 +3,7 @@
 // reaches the price API is confirmed to be a real, tradable symbol on Yahoo
 // before we act on it.
 
-const isIndia = (sym = '', exch = '') => /\.(NS|BO)$/i.test(sym) || /^(NSI|BSE)$/i.test(exch);
+import { currencyFor, exchangeFor } from './_market.js';
 
 // Returns canonical metadata for an EXACT symbol match, or null if it doesn't
 // resolve to a real equity/ETF. Cheap: one Yahoo search call.
@@ -22,8 +22,8 @@ export async function resolveTicker(symbol) {
     return {
       symbol:   hit.symbol,
       name:     hit.shortname || hit.longname || hit.symbol,
-      exchange: hit.exchDisp || hit.exchange || '',
-      currency: isIndia(hit.symbol, hit.exchange) ? 'INR' : 'USD',
+      exchange: exchangeFor(hit.symbol, hit.exchDisp, hit.exchange),
+      currency: currencyFor(hit.symbol, hit.currency, hit.exchange),
     };
   } catch {
     return null;

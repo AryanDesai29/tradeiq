@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { symbolFor } from "./stock.js";
 
 // ─── TICKER SEARCH — type a few letters, pick the correct symbol ──────
 // Solves two problems at once:
@@ -91,7 +92,7 @@ export default function TickerSearch({ value, onChange, onSelect, market = "us",
             >
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontFamily: C.display, fontWeight: 700, fontSize: 12, color: C.text }}>
-                  {r.symbol} <span style={{ fontSize: 9, color: r.currency === "INR" ? C.gold : C.blue, marginLeft: 4 }}>{r.currency === "INR" ? "₹ NSE" : "$ " + (r.exchange || "US")}</span>
+                  {r.symbol} <span style={{ fontSize: 9, color: r.currency === "INR" ? C.gold : C.blue, marginLeft: 4 }}>{symbolFor(r.currency)} {r.exchange || (r.currency === "INR" ? "NSE" : "US")}</span>
                 </div>
                 <div style={{ fontSize: 9, color: C.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.name}</div>
               </div>

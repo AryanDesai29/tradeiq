@@ -5,6 +5,7 @@
 
 import { verifyUser } from './_auth.js';
 import { enforce, callerKey, tooMany } from './_ratelimit.js';
+import { currencyFor } from './_market.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
@@ -83,7 +84,7 @@ export default async function handler(req, res) {
       ema200:   ema(closes, 200),
       rsi:      calcRSI(closes),
       spark:    closes.slice(-8).map(v => parseFloat(v.toFixed(2))),
-      currency: meta.currency ?? (ticker.endsWith('.NS') ? 'INR' : 'USD'),
+      currency: currencyFor(ticker, meta.currency, meta.exchangeName),
     };
   }
 

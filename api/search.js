@@ -6,6 +6,7 @@
 
 import { verifyUser } from './_auth.js';
 import { enforce, callerKey, tooMany } from './_ratelimit.js';
+import { currencyFor, exchangeFor } from './_market.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
@@ -28,18 +29,15 @@ export default async function handler(req, res) {
     if (!r.ok) throw new Error(`Yahoo status ${r.status}`);
     const d = await r.json();
 
-    const isIndia = (sym = '', exch = '') =>
-      /\.(NS|BO)$/i.test(sym) || /^(NSI|BSE)$/i.test(exch);
-
     let results = (d.quotes || [])
       // Equities / ETFs only — skip options, futures, currencies, indices noise.
       .filter(x => x.symbol && (x.quoteType === 'EQUITY' || x.quoteType === 'ETF'))
       .map(x => ({
         symbol:   x.symbol,
         name:     x.shortname || x.longname || x.symbol,
-        exchange: x.exchDisp || x.exchange || '',
+        exchange: exchangeFor(x.symbol, x.exchDisp, x.exchange),
         type:     x.quoteType,
-        currency: isIndia(x.symbol, x.exchange) ? 'INR' : 'USD',
+        currency: currencyFor(x.symbol, x.currency, x.exchange),
       }));
 
     // Bias the requested market to the top without dropping the rest.

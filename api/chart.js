@@ -1,6 +1,8 @@
 // Vercel Serverless Function — fetches OHLCV history for charting
 // Returns 90 days of daily candles + calculated indicators
 
+import { currencyFor } from './_market.js';
+
 export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
@@ -27,7 +29,7 @@ export default async function handler(req, res) {
     const lows       = q.low    ?? [];
     const closes     = q.close  ?? [];
     const volumes    = q.volume ?? [];
-    const currency   = result.meta?.currency ?? 'USD';
+    const currency   = currencyFor(ticker, result.meta?.currency, result.meta?.exchangeName);
 
     // Build OHLCV array, filter nulls
     const candles = timestamps.map((t, i) => ({
