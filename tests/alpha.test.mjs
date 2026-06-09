@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { expectancyBy, holdingDays, holdingBucket, marketOf, personalAlpha, MIN_SAMPLE } from "../src/alpha.js";
+import { expectancyBy, holdingDays, holdingBucket, marketOf, personalAlpha, mistakeCost, confidenceOf, MIN_SAMPLE } from "../src/alpha.js";
 
 // Build a closed trade with a known R. risk = |entry-stop|*shares; pnl = (exit-entry)*shares*dir.
 // To get a clean +nR winner: entry=100, stop=90 (risk 10/sh), exit=100+10n.
@@ -86,4 +86,52 @@ test("personalAlpha never reads review scores (regime excluded by construction)"
   const a1 = personalAlpha(Array.from({ length: MIN_SAMPLE }, () => winR(1)));
   const a2 = personalAlpha(Array.from({ length: MIN_SAMPLE }, () => winR(1, { regime_score: 5 })));
   assert.equal(a1.bestEdge.expectancyR, a2.bestEdge.expectancyR);
+});
+
+test("confidenceOf tiers scale with R-valued sample size", () => {
+  assert.equal(confidenceOf(3).tier, "none");    // below MIN_SAMPLE → building
+  assert.equal(confidenceOf(5).tier, "low");     // 5–9
+  assert.equal(confidenceOf(9).tier, "low");
+  assert.equal(confidenceOf(10).tier, "medium"); // 10–29
+  assert.equal(confidenceOf(29).tier, "medium");
+  assert.equal(confidenceOf(30).tier, "high");   // 30+
+});
+
+test("mistakeCost attributes realised R to a tag via its trade, sorted by damage", () => {
+  const trades = [
+    lossR(1, { id: "t1" }),  // -1R
+    lossR(3, { id: "t2" }),  // -3R
+    winR(1,  { id: "t3" }),  // +1R
+  ];
+  const reviews = [
+    { trade_id: "t1", tags: ["sold_winner_early", "moved_stop"] },
+    { trade_id: "t2", tags: ["moved_stop"] },
+    { trade_id: "t3", tags: ["sold_winner_early"] },
+  ];
+  const c = mistakeCost(reviews, trades);
+  const movedStop = c.find((m) => m.tag === "moved_stop");
+  assert.equal(movedStop.count, 2);
+  assert.equal(movedStop.withRisk, 2);
+  assert.equal(movedStop.avgR, -2);             // (−1 + −3)/2
+  assert.equal(movedStop.totalR, -4);
+  // sold_winner_early: (−1 + +1)/2 = 0 avg, total 0 → less damage than moved_stop.
+  assert.equal(c[0].tag, "moved_stop");          // most negative totalR sorts first
+  assert.ok(c[0].label.length > 0);              // human label resolved from vocab
+});
+
+test("mistakeCost ignores unknown tags, error rows, and missing trades", () => {
+  const trades = [winR(2, { id: "t1" })];
+  const c = mistakeCost([
+    { trade_id: "t1", tags: ["not_a_real_tag", "sold_winner_early"] },
+    { trade_id: "missing", tags: ["moved_stop"] },  // trade not present → count only, no R
+    { error: "groq failed" },                        // placeholder row → skipped
+    null,
+  ], trades);
+  assert.ok(!c.some((m) => m.tag === "not_a_real_tag"));
+  const swe = c.find((m) => m.tag === "sold_winner_early");
+  assert.equal(swe.withRisk, 1);
+  const ms = c.find((m) => m.tag === "moved_stop");
+  assert.equal(ms.count, 1);
+  assert.equal(ms.withRisk, 0);                   // trade missing → no R attributed
+  assert.equal(ms.avgR, null);
 });

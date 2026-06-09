@@ -1,14 +1,22 @@
-import { personalAlpha } from "./alpha.js";
+import { personalAlpha, mistakeCost, confidenceOf } from "./alpha.js";
 
 // ─── PERSONAL ALPHA (P2.5) — "what conditions make / lose you money" ──────────
 // Pure presentation over src/alpha.js. Edges (+R) are green, leaks (−R) red;
-// every figure carries its sample size, and buckets below the confidence gate
-// are shown dimmed and labelled "building" rather than dressed up as insight.
-export default function PersonalAlpha({ journal = [], theme }) {
+// every figure carries its sample size + a confidence tier, and buckets below
+// the gate are shown dimmed and labelled "building" rather than dressed up as
+// insight. The headline card distils everything into one edge + one leak.
+export default function PersonalAlpha({ journal = [], reviews = [], theme }) {
   const C = theme;
   const a = personalAlpha(journal);
   const r1 = (v) => `${v >= 0 ? "+" : ""}${v.toFixed(2)}R`;
   const pct = (v) => `${(v * 100).toFixed(0)}%`;
+
+  // Behavioural leak: costliest recurring mistake with enough R-valued trades to
+  // quantify. Falls back to the worst negative-expectancy condition if no mistake
+  // has been costed yet (e.g. trades closed before the review table existed).
+  const costed = mistakeCost(reviews, journal);
+  const topMistake = costed.find((m) => m.avgR != null && m.avgR < 0 && m.withRisk >= 3) || null;
+  const tierColor = { high: C.green, medium: C.gold, low: C.muted, none: C.dim };
 
   // Need at least one confident bucket to say anything honest about edge.
   if (a.confidentBuckets === 0) {
@@ -23,17 +31,53 @@ export default function PersonalAlpha({ journal = [], theme }) {
     );
   }
 
-  const Headline = ({ label, g, color }) => (
-    <div style={{ flex: 1, minWidth: 220, background: C.s2, border: `1px solid ${C.border}`, borderLeft: `3px solid ${color}`, borderRadius: 7, padding: 14 }}>
-      <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: C.muted, marginBottom: 5 }}>{label}</div>
-      {g ? (<>
-        <div style={{ fontFamily: C.display, fontSize: 18, fontWeight: 800, color: C.text, lineHeight: 1.1 }}>{g.key}</div>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 4 }}>
-          <span style={{ fontFamily: C.display, fontSize: 20, fontWeight: 800, color }}>{r1(g.expectancyR)}</span>
-          <span style={{ fontSize: 10, color: C.muted }}>{g.dimension} · {pct(g.winRate)} win · {g.withRisk} trades</span>
-        </div>
-      </>) : <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>—</div>}
+  // Shared shell for the two headline cards.
+  const Card = ({ label, color, children }) => (
+    <div style={{ flex: 1, minWidth: 230, background: C.s2, border: `1px solid ${C.border}`, borderLeft: `3px solid ${color}`, borderRadius: 7, padding: 14 }}>
+      <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: C.muted, marginBottom: 6 }}>{label}</div>
+      {children}
     </div>
+  );
+  const ConfTag = ({ n }) => { const c = confidenceOf(n); return (
+    <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.06em", color: tierColor[c.tier], border: `1px solid ${tierColor[c.tier]}55`, borderRadius: 4, padding: "1px 5px" }}>{c.label.toUpperCase()}</span>
+  ); };
+
+  // Your Current Edge — the single highest-expectancy confident condition.
+  const EdgeCard = () => (
+    <Card label="Your current edge" color={C.green}>
+      {a.bestEdge ? (<>
+        <div style={{ fontFamily: C.display, fontSize: 18, fontWeight: 800, color: C.text, lineHeight: 1.15 }}>{a.bestEdge.key}</div>
+        <div style={{ fontSize: 10, color: C.muted, marginBottom: 6 }}>{a.bestEdge.dimension}</div>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+          <span style={{ fontFamily: C.display, fontSize: 22, fontWeight: 800, color: C.green }}>{r1(a.bestEdge.expectancyR)}</span>
+          <span style={{ fontSize: 10, color: C.muted }}>{pct(a.bestEdge.winRate)} win · {a.bestEdge.withRisk} trades</span>
+          <ConfTag n={a.bestEdge.withRisk} />
+        </div>
+      </>) : <div style={{ fontSize: 12, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>No condition has hit {a.minSample} trades yet — keep logging.</div>}
+    </Card>
+  );
+
+  // Your Biggest Leak — costliest behavioural mistake (preferred, actionable),
+  // else the worst negative-expectancy condition.
+  const LeakCard = () => (
+    <Card label="Your biggest leak" color={C.red}>
+      {topMistake ? (<>
+        <div style={{ fontFamily: C.display, fontSize: 18, fontWeight: 800, color: C.text, lineHeight: 1.15 }}>{topMistake.label}</div>
+        <div style={{ fontSize: 10, color: C.muted, marginBottom: 6 }}>recurring mistake · {topMistake.count}× across reviews</div>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+          <span style={{ fontFamily: C.display, fontSize: 22, fontWeight: 800, color: C.red }}>{r1(topMistake.avgR)}</span>
+          <span style={{ fontSize: 10, color: C.muted }}>avg · {r1(topMistake.totalR)} total · {topMistake.withRisk} trades</span>
+        </div>
+      </>) : a.worstLeak ? (<>
+        <div style={{ fontFamily: C.display, fontSize: 18, fontWeight: 800, color: C.text, lineHeight: 1.15 }}>{a.worstLeak.key}</div>
+        <div style={{ fontSize: 10, color: C.muted, marginBottom: 6 }}>{a.worstLeak.dimension}</div>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+          <span style={{ fontFamily: C.display, fontSize: 22, fontWeight: 800, color: C.red }}>{r1(a.worstLeak.expectancyR)}</span>
+          <span style={{ fontSize: 10, color: C.muted }}>{pct(a.worstLeak.winRate)} win · {a.worstLeak.withRisk} trades</span>
+          <ConfTag n={a.worstLeak.withRisk} />
+        </div>
+      </>) : <div style={{ fontSize: 12, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>No costed leak yet — review a few closed trades to surface mistakes.</div>}
+    </Card>
   );
 
   // Widest |expectancy| across confident buckets → bar scale.
@@ -47,8 +91,8 @@ export default function PersonalAlpha({ journal = [], theme }) {
       </div>
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
-        <Headline label="Biggest edge" g={a.bestEdge} color={C.green} />
-        <Headline label="Biggest leak" g={a.worstLeak} color={C.red} />
+        <EdgeCard />
+        <LeakCard />
       </div>
 
       {a.dims.map((d) => (
@@ -67,7 +111,7 @@ export default function PersonalAlpha({ journal = [], theme }) {
                     <div style={{ height: 6, width: w, minWidth: 3, background: col, borderRadius: 3 }} />
                   </div>
                   <div style={{ fontFamily: C.display, fontWeight: 700, fontSize: 12, color: col, width: 56, textAlign: "right" }}>{r1(g.expectancyR)}</div>
-                  <div style={{ fontSize: 9, color: C.muted, width: 86, textAlign: "right" }}>{pct(g.winRate)} · {confident ? `${g.withRisk} trades` : `${g.withRisk}, building`}</div>
+                  <div style={{ fontSize: 9, color: C.muted, width: 104, textAlign: "right" }}>{pct(g.winRate)} · {g.withRisk}t · {confident ? confidenceOf(g.withRisk).short : "building"}</div>
                 </div>
               );
             })}

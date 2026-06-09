@@ -14,6 +14,7 @@
 //      MIN_SAMPLE R-valued trades are still shown but flagged low-confidence and
 //      never surfaced as a headline edge/leak.
 import { isClosed, pnlOf, rMultipleOf } from "./analytics.js";
+import { MISTAKE_TAGS } from "./reviews.js";
 
 // Market is derived from currency (single source of truth), never a stored column.
 export const marketOf = (t) => (t?.currency === "INR" ? "India" : "US");
@@ -67,6 +68,44 @@ export function expectancyBy(trades = [], keyFn) {
 
 // Below this many R-valued trades, a bucket's expectancy is treated as noise.
 export const MIN_SAMPLE = 5;
+
+// Dynamic confidence from the R-valued sample size. Below MIN_SAMPLE a figure is
+// "building" and never surfaced as a headline edge/leak. Statistics deserve a
+// label proportional to their sample — 6 trades and 60 trades are not equals.
+export function confidenceOf(n) {
+  if (n >= 30) return { tier: "high",   label: "High",     short: "High" };
+  if (n >= 10) return { tier: "medium", label: "Medium",   short: "Med" };
+  if (n >= MIN_SAMPLE) return { tier: "low", label: "Low",  short: "Low" };
+  return { tier: "none", label: "Building", short: "—" };
+}
+
+// Behavioural-leak attribution: join each review's mistake tags to THAT trade's
+// realised R, so a tag carries a cost ("sold winners early: −0.7R over 11"). The
+// missing link between the review engine (tags) and the alpha engine (R) — this
+// is what makes "Your Biggest Leak" actionable rather than just a count. Sorted
+// by total R damage (most negative first). count = appearances even without R.
+export function mistakeCost(reviews = [], trades = []) {
+  const byId = new Map(trades.filter(isClosed).map((t) => [t.id, t]));
+  const agg = {};
+  for (const rv of reviews) {
+    if (!rv || !Array.isArray(rv.tags)) continue;       // skip error/placeholder rows
+    const t = byId.get(rv.trade_id);
+    const r = t ? rMultipleOf(t) : null;
+    for (const tag of new Set(rv.tags)) {
+      if (!MISTAKE_TAGS[tag]) continue;                 // controlled vocabulary only
+      const o = agg[tag] || (agg[tag] = { tag, label: MISTAKE_TAGS[tag], count: 0, rs: [] });
+      o.count++;
+      if (r != null) o.rs.push(r);
+    }
+  }
+  return Object.values(agg)
+    .map((o) => ({
+      tag: o.tag, label: o.label, count: o.count, withRisk: o.rs.length,
+      avgR:   o.rs.length ? +(o.rs.reduce((s, x) => s + x, 0) / o.rs.length).toFixed(2) : null,
+      totalR: +o.rs.reduce((s, x) => s + x, 0).toFixed(2),
+    }))
+    .sort((a, b) => a.totalR - b.totalR);
+}
 
 export const DIMENSIONS = [
   { id: "strategy", label: "Strategy",       keyFn: (t) => t.strategy || null },

@@ -113,7 +113,7 @@ export default function Performance({ journal = [], reviews = [], theme }) {
       {/* Personal Alpha (P2.5) — the recurring-mistakes seed above grown into a
           full edge/leak engine: expectancy in R by strategy, sector, market,
           side, and holding period. */}
-      <PersonalAlpha journal={journal} theme={C} />
+      <PersonalAlpha journal={journal} reviews={reviews} theme={C} />
 
       {/* Monthly returns per currency */}
       <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 8, padding: 16 }}>
