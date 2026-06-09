@@ -38,6 +38,12 @@ export default async function handler(req, res) {
         exchange: exchangeFor(x.symbol, x.exchDisp, x.exchange),
         type:     x.quoteType,
         currency: currencyFor(x.symbol, x.currency, x.exchange),
+        // Yahoo returns sector/industry inline on equity search hits (US + .NS
+        // both covered). Passed through so the journal can record them at trade
+        // creation → Personal Alpha sector/industry expectancy (P2.5). null when
+        // Yahoo omits them (e.g. some ETFs).
+        sector:   x.sectorDisp   || x.sector   || null,
+        industry: x.industryDisp || x.industry || null,
       }));
 
     // Bias the requested market to the top without dropping the rest.
