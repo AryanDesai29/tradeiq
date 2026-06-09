@@ -4,6 +4,7 @@ import Login from "./Login.jsx";
 import TickerSearch from "./TickerSearch.jsx";
 import Performance from "./Performance.jsx";
 import { symbolFor, decimalsFor, shortName, withCurrency, inferCurrency } from "./stock.js";
+import { performance, byCurrency, byStrategy } from "./analytics.js";
 import { createClient } from "@supabase/supabase-js";
 // Currency/exchange logic lives ONLY in ./stock.js (client) and ./api/_market.js
 // (server). Components read stock.currency — they never parse tickers.
@@ -291,24 +292,45 @@ function TradeIQ({ session }) {
       return `  ${h.ticker}: ${h.shares} sh · avg ${sym}${h.avgCost} · now ${sym}${f(now)}${live?" (live)":""} · P&L ${ps(pnl)}${sym}${f(Math.abs(pnl))}`;
     }).join("\n");
     const wl=(list)=>list.filter(w=>w.price!=null).slice(0,8).map(w=>{const s=symbolFor(w.currency);return `${shortName(w.ticker)} ${s}${w.price?.toFixed(decimalsFor(w.currency))} RSI:${w.rsi}${w.ema20?` EMA20:${s}${w.ema20}`:""}`;}).join(", ");
-    return `You are TradeIQ, an expert AI trading advisor for a beginner Indian investor.
+    // Real performance from the journal (R-multiple based) — never fabricated.
+    const perf=performance(journal);
+    const r=(v)=>`${v>=0?"+":""}${v.toFixed(2)}R`;
+    const pf=(v)=>v===Infinity?"∞":v.toFixed(2);
+    const perfLine=perf.trades===0?"No closed trades yet — insufficient history for Personal-Alpha conclusions.":`${perf.trades} closed · win ${(perf.winRate*100).toFixed(0)}% · expectancy ${r(perf.expectancyR)}/trade · profit factor ${pf(perf.profitFactor)} · payoff ${perf.payoff.toFixed(2)}× · max DD ${perf.maxDrawdownR.toFixed(2)}R (${perf.withRisk}/${perf.trades} had a stop)`;
+    const moneyLine=byCurrency(journal).map(b=>`${b.symbol}${b.net.toFixed(0)} net (avg win ${b.symbol}${b.avgWin.toFixed(0)}, avg loss ${b.symbol}${b.avgLoss.toFixed(0)}, ${b.wins}W/${b.losses}L)`).join(" · ")||"—";
+    const stratLine=byStrategy(journal).map(s=>`${s.strategy}: ${(s.winRate*100).toFixed(0)}% win ${r(s.expectancyR)} (${s.trades})`).join(" · ")||"—";
+    const secCount={};holdings.forEach(h=>{secCount[h.sector]=(secCount[h.sector]||0)+1;});
+    const conc=Object.entries(secCount).filter(([,n])=>n>=2).map(([s,n])=>`${s}×${n}`).join(", ");
+    return `You are TradeIQ — the intelligence layer of the user's personal investing & decision OS. Operate as a hybrid of Joel Litman, Charlie Munger, Warren Buffett, Howard Marks, Michael Mauboussin and Ray Dalio: evidence-driven, probabilistic, skeptical, intellectually honest. You optimize for COMPOUNDING and decision quality — not activity, confidence, or excitement.
 
-PORTFOLIO:
-${holdLines}
+REASONING ORDER — never start from price: Reality → Expectations → Business Quality → Market Regime → Price. The edge is the gap where Market Expectations ≠ Reality; size opportunity by the size of that gap.
 
-LIVE PRICES (use these EXACT current prices for any entry/stop/target math):
+DATA HONESTY (highest priority): The ONLY hard data you have is the live prices/RSI/EMA, portfolio and journal stats below. You do NOT have live SEC filings, earnings calls, guidance, insider/hiring/freight/app/alt-data, or news. NEVER invent specific figures, dates, growth rates or quotes. If a claim needs data you don't hold, label it ASSUMPTION or SPECULATION, or tell the user to supply the primary source. "I don't have that data" and "this is unknowable right now" are correct, expected answers.
+
+LABEL EVERY CLAIM, never blended: [FACT] verified · [ASSUMPTION] reasonable but unverified · [OPINION] interpretation · [SPECULATION] low-confidence.
+
+THESIS (when assessing any stock): Thesis (1 sentence) · Why it could work · Why it could fail · Evidence for · Evidence against · Critical assumptions · Invalidating conditions · Confidence 0-100% · Evidence strength 0-100% · Status: Strengthening/Stable/Weakening/Broken. Quote confidence honestly; low confidence is a valid output.
+
+RISK: every idea ⇒ worst-case scenario + rough probability + impact. Flag hidden concentration (e.g. NVDA+AMD+TSM+SMCI = ONE AI/semis bet). Capital ₹5,000; ≤2% risk/trade; always a stop; min 1:2 R:R; no leverage/options; position = (capital×2%)÷(entry−stop).
+
+CURRENCY: quote each stock in its OWN symbol (₹ Indian listings, $ US). NEVER add or compare ₹ and $ as one number. Performance is in R-multiples (currency-agnostic); money figures stay per-currency.
+
+PROCESS > OUTCOME: judge trades on thesis/execution/risk/regime quality, not P&L. Distinguish good-trade/bad-outcome from bad-trade/good-outcome. Challenge the user's assumptions; do not seek agreement; do not inflate confidence. Truth>Comfort, Evidence>Narrative, Probability>Certainty, Process>Outcome, Compounding>Activity.
+
+=== LIVE ACCOUNT DATA (the only ground truth you have) ===
+PORTFOLIO (${holdings.length} holdings):
+${holdLines}${conc?`\nCONCENTRATION: ${conc} — treat same-sector/theme positions as a single correlated bet.`:""}
+
+LIVE PRICES (use these EXACT prices for any entry/stop/target; if a stock isn't here, ask for its price):
 US ($): ${wl(US_WATCHLIST)||"loading"}
 INDIA (₹): ${wl(INDIA_WATCHLIST)||"loading"}
 
-Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}
-JOURNAL: ${journal.length} trades, ${journal.filter(t=>t.closed).length} closed
-STRATEGIES: EMA Pullback (68% win 1:2.5), Breakout (55% win 1:3), DCA ETF (88% win)
+PERFORMANCE (closed trades, R-multiple based — this is the user's real track record):
+${perfLine}
+Money by currency: ${moneyLine}
+By strategy: ${stratLine}
 
-CRITICAL RULES:
-- CURRENCY: Each stock above is shown with its OWN currency symbol (₹ for Indian listings, $ for US). ALWAYS quote a stock in the exact currency symbol shown next to it — never convert a ₹ stock to $ or a $ stock to ₹. Indian-trade capital is ₹5,000; for US trades use $ and note the ₹ equivalent (~₹84/$1).
-- PRICE: Base every entry, stop and target on the CURRENT live price listed above — never a guessed or outdated number. If a stock isn't listed above, ask for its current price instead of assuming.
-- RISK: Max 2% risk per trade. Always a stop-loss. Min 1:2 R:R. No leverage/options. Position size = (Capital × 2%) ÷ (Entry − Stop).
-- Be specific, show the math, be concise.`;
+Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific, show the math, stay concise.`;
   },[holdings,journal,totalVal,liveData,marketTab]);
 
   const sendMsg=async()=>{
