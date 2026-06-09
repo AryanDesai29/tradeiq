@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import TickerSearch from "./TickerSearch.jsx";
+import { symbolFor, decimalsFor, shortName } from "./stock.js";
 
 const C = {
   bg:"#06090f",s1:"#0b1119",s2:"#0f1824",s3:"#142030",
@@ -14,11 +16,6 @@ const PERIOD_LABELS = {"1mo":"1M","3mo":"3M","6mo":"6M","1y":"1Y"};
 
 function formatDate(ts) {
   return new Date(ts).toLocaleDateString("en-US",{month:"short",day:"numeric"});
-}
-function formatPrice(v, currency) {
-  if (!v) return "—";
-  const sym = currency === "INR" ? "₹" : "$";
-  return sym + (currency === "INR" ? Math.round(v).toLocaleString("en-IN") : v.toFixed(2));
 }
 function lerp(a, b, t) { return a + (b - a) * t; }
 
@@ -74,7 +71,7 @@ function useChart(canvasRef, data, chartType, showIndicators, hoveredIdx) {
       ctx.fillStyle = C.muted;
       ctx.font = `10px ${C.mono}`;
       ctx.textAlign = "right";
-      ctx.fillText(price.toFixed(data.meta?.currency === "INR" ? 0 : 2), padL - 4, y + 3);
+      ctx.fillText(price.toFixed(decimalsFor(data.meta?.currency)), padL - 4, y + 3);
     }
 
     // EMA200 line
@@ -389,39 +386,29 @@ export default function ChartView({ ticker: initialTicker, market = "us", onClos
     setHoveredCandle(null);
   }, []);
 
-  const submitTicker = () => {
-    let t = tickerInput.trim().toUpperCase();
-    if (!t) return;
-    if (market === "india" && !t.endsWith(".NS")) t += ".NS";
-    setTicker(t);
-  };
-
   const trendColor = data ? (
     data.trend?.includes("BULL") ? C.green :
     data.trend?.includes("BEAR") ? C.red : C.gold
   ) : C.muted;
 
-  const curr = data?.meta?.currency === "INR" ? "₹" : "$";
-  const dp   = data?.meta?.currency === "INR" ? 0 : 2;
+  // Currency comes from the chart API (canonical, via api/_market.js) → symbolFor.
+  const curr = symbolFor(data?.meta?.currency);
+  const dp   = decimalsFor(data?.meta?.currency);
 
   return (
     <div style={{ background: C.bg, height: "100%", display: "flex", flexDirection: "column", fontFamily: C.mono, color: C.text }}>
       {/* Header */}
       <div style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", borderBottom:`1px solid ${C.border}`, background:C.s1, flexWrap:"wrap" }}>
-        {/* Ticker input */}
-        <div style={{ display:"flex", gap:6 }}>
-          <input
-            value={tickerInput}
-            onChange={e => setTickerInput(e.target.value.toUpperCase())}
-            onKeyDown={e => e.key === "Enter" && submitTicker()}
-            placeholder={market === "india" ? "e.g. TCS" : "e.g. NVDA"}
-            style={{ background:C.s2, border:`1px solid ${C.border}`, borderRadius:5, padding:"5px 10px", color:C.text, fontFamily:C.mono, fontSize:12, width:100, outline:"none" }}
-          />
-          <button onClick={submitTicker} style={{ background:C.accent+"18", border:`1px solid ${C.accent}35`, borderRadius:5, color:C.accent, fontFamily:C.display, fontWeight:700, fontSize:10, padding:"5px 12px", cursor:"pointer", textTransform:"uppercase", letterSpacing:"0.08em" }}>Go</button>
+        {/* Ticker search — selection-only, carries the canonical symbol */}
+        <div style={{ width:190 }}>
+          <TickerSearch theme={C} value={tickerInput} market={market}
+            onChange={setTickerInput}
+            onSelect={(r)=>{ setTicker(r.symbol); setTickerInput(r.symbol); }}
+            placeholder={market === "india" ? "Search e.g. TCS" : "Search e.g. NVDA"} />
         </div>
 
         {/* Current ticker + price */}
-        <div style={{ fontFamily:C.display, fontWeight:800, fontSize:16, color:C.text }}>{ticker.replace(".NS","")}</div>
+        <div style={{ fontFamily:C.display, fontWeight:800, fontSize:16, color:C.text }}>{shortName(ticker)}</div>
         {data?.meta && (
           <div style={{ display:"flex", gap:12, alignItems:"center" }}>
             <span style={{ fontFamily:C.display, fontWeight:700, fontSize:16 }}>{curr}{data.meta.lastClose?.toFixed(dp)}</span>
