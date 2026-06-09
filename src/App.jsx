@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import ChartView from "./ChartView.jsx";
 import Login from "./Login.jsx";
 import TickerSearch from "./TickerSearch.jsx";
+import Performance from "./Performance.jsx";
 import { symbolFor, decimalsFor, shortName, withCurrency, inferCurrency } from "./stock.js";
 import { createClient } from "@supabase/supabase-js";
 // Currency/exchange logic lives ONLY in ./stock.js (client) and ./api/_market.js
@@ -145,7 +146,7 @@ const LS = {
 function TradeIQ({ session }) {
   const userId = session?.user?.id || "local";
   const authToken = session?.access_token || null; // sent to /api/prices + /api/search for per-user rate limiting
-  const [tab,setTab]           = useState("dash");
+  const [tab,setTab]           = useState("perf");
   const [holdings,setHoldings] = useState(()=>LS.load(`tradeiq_holdings_backup_${userId}`,[]).map(withCurrency));
   const [journal,setJournal]   = useState(()=>LS.load(`tradeiq_journal_backup_${userId}`,[]).map(withCurrency));
   const [syncStatus,setSS]     = useState("idle");
@@ -336,7 +337,7 @@ CRITICAL RULES:
 
   const syncLabel={idle:"",syncing:"⟳ Syncing",synced:"✓ Synced",error:"⚠ Error"};
   const syncColor={idle:C.muted,syncing:C.gold,synced:C.green,error:C.red};
-  const TABS=[{id:"dash",l:"📊 Dashboard"},{id:"ai",l:"🤖 AI Advisor"},{id:"scanner",l:"🔍 Scanner"},{id:"chart",l:"📈 Charts"},{id:"strategies",l:"⚡ Strategies"},{id:"journal",l:"📓 Journal"},{id:"learn",l:"📚 Learn"}];
+  const TABS=[{id:"perf",l:"🏆 Performance"},{id:"dash",l:"📊 Dashboard"},{id:"ai",l:"🤖 AI Advisor"},{id:"scanner",l:"🔍 Scanner"},{id:"chart",l:"📈 Charts"},{id:"strategies",l:"⚡ Strategies"},{id:"journal",l:"📓 Journal"},{id:"learn",l:"📚 Learn"}];
 
   // ── DASHBOARD ──
   const Dashboard=()=>(
@@ -608,7 +609,7 @@ CRITICAL RULES:
         {TABS.map(t=>(<button key={t.id} className="tiq-btn" onClick={()=>setTab(t.id)} style={{padding:"10px 14px",fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",fontFamily:C.display,background:"none",border:"none",borderBottom:tab===t.id?`2px solid ${C.accent}`:"2px solid transparent",color:tab===t.id?C.accent:C.muted,whiteSpace:"nowrap"}}>{t.l}</button>))}
       </div>
       <div style={{padding:18,maxWidth:1200,margin:"0 auto"}}>
-        {tab==="dash"&&Dashboard()}{tab==="ai"&&AIChat()}{tab==="scanner"&&Scanner()}{tab==="chart"&&<div style={{height:"calc(100vh - 140px)",margin:-18}}><ChartView ticker={chartTicker} market={marketTab} onClose={null}/></div>}{tab==="strategies"&&StrategiesTab()}{tab==="journal"&&JournalTab()}{tab==="learn"&&Learn()}
+        {tab==="perf"&&<Performance journal={journal} theme={C}/>}{tab==="dash"&&Dashboard()}{tab==="ai"&&AIChat()}{tab==="scanner"&&Scanner()}{tab==="chart"&&<div style={{height:"calc(100vh - 140px)",margin:-18}}><ChartView ticker={chartTicker} market={marketTab} onClose={null}/></div>}{tab==="strategies"&&StrategiesTab()}{tab==="journal"&&JournalTab()}{tab==="learn"&&Learn()}
       </div>
     </div>
   );
