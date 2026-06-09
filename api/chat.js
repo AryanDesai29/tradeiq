@@ -2,45 +2,26 @@
 // Requires a valid Supabase session (JWT) so only signed-in users can spend
 // our Groq credits. Optional email allowlist via CHAT_EMAIL_ALLOWLIST.
 
-const SUPABASE_URL  = process.env.SUPABASE_URL  || process.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+import { verifyUser } from './_auth.js';
+import { enforce, tooMany } from './_ratelimit.js';
+
 const ALLOWLIST = (process.env.CHAT_EMAIL_ALLOWLIST || '')
   .split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
-
-// Best-effort per-user rate limit. In-memory, so it resets on cold start —
-// fine as a light guard for a private 1-2 user app (the JWT gate is the real lock).
-const hits = new Map();
-function limited(key, max = 30, windowMs = 60_000) {
-  const now = Date.now();
-  const arr = (hits.get(key) || []).filter(t => now - t < windowMs);
-  arr.push(now);
-  hits.set(key, arr);
-  return arr.length > max;
-}
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   // ── Require a valid Supabase session ──
-  if (!SUPABASE_URL || !SUPABASE_ANON) return res.status(500).json({ error: 'Auth not configured' });
-  const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-  if (!token) return res.status(401).json({ error: 'Sign in required' });
-
-  let user;
-  try {
-    const ur = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
-      headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${token}` },
-    });
-    if (!ur.ok) return res.status(401).json({ error: 'Invalid session' });
-    user = await ur.json();
-  } catch {
-    return res.status(401).json({ error: 'Auth check failed' });
-  }
-  if (!user?.id) return res.status(401).json({ error: 'Invalid session' });
+  const user = await verifyUser(req);
+  if (!user) return res.status(401).json({ error: 'Sign in required' });
   if (ALLOWLIST.length && !ALLOWLIST.includes((user.email || '').toLowerCase())) {
     return res.status(403).json({ error: 'This account is not authorized' });
   }
-  if (limited(user.id)) return res.status(429).json({ error: 'Slow down a moment and try again.' });
+
+  // ── Rate limit: 30 requests/hour with a 5/minute burst cap, per user ──
+  // Stops infinite loops, accidental Groq bill spikes, and abuse if a token leaks.
+  const rl = await enforce(`u:${user.id}`, [['chat_burst', 5, 60], ['chat_hourly', 30, 3600]]);
+  if (!rl.ok) return tooMany(res, rl.retryAfter);
 
   // ── Validate input ──
   const { messages, systemPrompt } = req.body || {};

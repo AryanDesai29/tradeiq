@@ -1,7 +1,18 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import ChartView from "./ChartView.jsx";
 import Login from "./Login.jsx";
+import TickerSearch from "./TickerSearch.jsx";
 import { createClient } from "@supabase/supabase-js";
+
+// ─── CURRENCY HELPERS ─────────────────────────────────────────────
+// Indian tickers carry a .NS (NSE) or .BO (BSE) suffix → rupees.
+// Everything else is treated as a US dollar listing. This keeps currency
+// consistent everywhere without needing a separate DB column.
+const isINR = (t = "") => /\.(NS|BO)$/i.test(t);
+const curSym = (t) => (isINR(t) ? "₹" : "$");
+const curCode = (t) => (isINR(t) ? "INR" : "USD");
+// Indian shares quote in whole rupees; US in cents → pick sensible decimals.
+const curDp = (t) => (isINR(t) ? 2 : 2);
 
 // ─── SUPABASE — public anon key is safe in frontend ───────────────
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -140,6 +151,7 @@ const LS = {
 // ─── MAIN APP ─────────────────────────────────────────────────────
 function TradeIQ({ session }) {
   const userId = session?.user?.id || "local";
+  const authToken = session?.access_token || null; // sent to /api/prices + /api/search for per-user rate limiting
   const [tab,setTab]           = useState("dash");
   const [holdings,setHoldings] = useState(()=>LS.load(`tradeiq_holdings_backup_${userId}`,[]));
   const [journal,setJournal]   = useState(()=>LS.load(`tradeiq_journal_backup_${userId}`,[]));
@@ -149,8 +161,11 @@ function TradeIQ({ session }) {
   const [aiLoading,setAiLoading]   = useState(false);
   const [showAddH,setShowAddH]     = useState(false);
   const [showAddT,setShowAddT]     = useState(false);
-  const [newH,setNewH] = useState({ticker:"",name:"",shares:"",avgCost:"",price:"",sector:"Tech"});
-  const [newT,setNewT] = useState({ticker:"",side:"BUY",entry:"",stop:"",target:"",shares:"",strategy:"EMA Pullback",notes:"",date:new Date().toISOString().split("T")[0]});
+  // `meta` holds the chosen search result {symbol,name,exchange,currency}. A
+  // holding/trade can only be saved when meta.symbol matches the ticker field —
+  // i.e. the user picked from autocomplete rather than free-typing.
+  const [newH,setNewH] = useState({ticker:"",name:"",shares:"",avgCost:"",price:"",sector:"Tech",meta:null});
+  const [newT,setNewT] = useState({ticker:"",side:"BUY",entry:"",stop:"",target:"",shares:"",strategy:"EMA Pullback",notes:"",date:new Date().toISOString().split("T")[0],meta:null});
   const [calcE,setCalcE]=useState(""); const [calcS,setCalcS]=useState(""); const [calcR,setCalcR]=useState("2"); const [calcRes,setCalcRes]=useState(null);
   const [marketTab,setMarketTab]=useState("us");
   const [customUS,setCustomUS]=useState([]);
@@ -168,7 +183,8 @@ function TradeIQ({ session }) {
     setPriceStatus("loading");
     try {
       const extra = [...customUS, ...customIndia].join(",");
-      const res = await fetch(`/api/prices${extra ? `?extra=${encodeURIComponent(extra)}` : ""}`);
+      const res = await fetch(`/api/prices${extra ? `?extra=${encodeURIComponent(extra)}` : ""}`, authToken ? { headers: { Authorization: `Bearer ${authToken}` } } : undefined);
+      if(res.status===429){ setPriceStatus("error"); return; }
       const data = await res.json();
       if(data.prices) {
         setLiveData(data.prices);
@@ -187,15 +203,40 @@ function TradeIQ({ session }) {
     return () => clearInterval(interval);
   },[]);
 
+  // Refetch whenever the custom watchlist changes. This runs AFTER the state
+  // commit, so fetchPrices reads the up-to-date custom tickers — fixing the
+  // bug where a freshly added stock never got a price (stale closure) and was
+  // filtered out of the watchlist. A mount guard avoids a duplicate first call.
+  const tickersMounted = useRef(false);
+  useEffect(()=>{
+    if(!tickersMounted.current){ tickersMounted.current = true; return; }
+    fetchPrices();
+  },[customUS,customIndia]);
+
   // Mirror holdings/journal to localStorage so data survives a Supabase outage
   useEffect(()=>{ LS.save(`tradeiq_holdings_backup_${userId}`, holdings); },[holdings,userId]);
   useEffect(()=>{ LS.save(`tradeiq_journal_backup_${userId}`, journal); },[journal,userId]);
 
-  const mergeList=(base)=>base.map(w=>{const live=liveData[w.ticker];return{...w,price:live?.price??null,chg:live?.chg??0,rsi:live?.rsi??50,ema20:live?.ema20??null,ema200:live?.ema200??null,spark:live?.spark??[],currency:live?.currency??(w.ticker.endsWith(".NS")?"INR":"USD")};}).filter(w=>w.price!==null);
-  const US_WATCHLIST=mergeList([...US_BASE,...customUS.map(t=>({ticker:t,name:t}))]);
-  const INDIA_WATCHLIST=mergeList([...INDIA_BASE,...customIndia.map(t=>({ticker:t,name:t}))]);
+  // Custom tickers come FIRST (so a freshly added stock is always visible at
+  // the top, even within the dashboard's 8-row slice) and stay visible even
+  // before their price arrives — base stocks are hidden until priced. Dedupe by
+  // ticker so adding a stock that's already in the base list doesn't double it.
+  const mergeList=(base,customArr)=>{
+    const customSet=new Set(customArr);
+    const seen=new Set();
+    return [...customArr.map(t=>({ticker:t,name:t})),...base]
+      .filter(w=>{if(seen.has(w.ticker))return false;seen.add(w.ticker);return true;})
+      .map(w=>{const live=liveData[w.ticker];const custom=customSet.has(w.ticker);return{...w,price:live?.price??null,chg:live?.chg??0,rsi:live?.rsi??50,ema20:live?.ema20??null,ema200:live?.ema200??null,spark:live?.spark??[],currency:live?.currency??curCode(w.ticker),custom};})
+      .filter(w=>w.price!==null||w.custom);
+  };
+  const US_WATCHLIST=mergeList(US_BASE,customUS);
+  const INDIA_WATCHLIST=mergeList(INDIA_BASE,customIndia);
   const WATCHLIST=marketTab==="us"?US_WATCHLIST:INDIA_WATCHLIST;
-  const addCustomTicker=()=>{const t=addTickerInput.trim().toUpperCase();if(!t)return;if(marketTab==="india"){const tk=t.endsWith(".NS")?t:t+".NS";setCustomIndia(p=>[...new Set([...p,tk])]);}else setCustomUS(p=>[...new Set([...p,t])]);setAddTickerInput("");setShowAddTicker(false);setTimeout(fetchPrices,500);};
+  // Selection-only: takes a chosen search result {symbol,currency,…} — never raw
+  // text — and buckets by the symbol's own market so picking "RELIANCE.NS"
+  // always lands in the Indian list regardless of the current tab.
+  const addCustomTicker=(r)=>{const sym=(r?.symbol||"").trim().toUpperCase();if(!sym)return;if(r.currency==="INR"||isINR(sym))setCustomIndia(p=>[...new Set([...p,sym])]);else setCustomUS(p=>[...new Set([...p,sym])]);setAddTickerInput("");setShowAddTicker(false);/* refetch is handled by the effect on customUS/customIndia */};
+  const removeCustomTicker=(ticker)=>{setCustomUS(p=>p.filter(t=>t!==ticker));setCustomIndia(p=>p.filter(t=>t!==ticker));};
 
   const loadAll = async()=>{
     setSS("syncing");
@@ -208,8 +249,8 @@ function TradeIQ({ session }) {
         db.from("tradeiq_holdings").select("*").order("created_at",{ascending:true}),
         db.from("tradeiq_journal").select("*").order("created_at",{ascending:false}),
       ]);
-      if(h) setHoldings(h.map(r=>({id:r.id,ticker:r.ticker,name:r.name,shares:+r.shares,avgCost:+r.avg_cost,price:+r.price,sector:r.sector})));
-      if(j) setJournal(j.map(r=>({id:r.id,ticker:r.ticker,side:r.side,entry:String(r.entry_price||""),exit:r.exit_price?String(r.exit_price):null,shares:String(r.shares||""),stop:String(r.stop_loss||""),target:String(r.target||""),strategy:r.strategy,notes:r.notes,date:r.trade_date,closed:r.closed})));
+      if(h) setHoldings(h.map(r=>({id:r.id,ticker:r.ticker,name:r.name,exchange:r.exchange,currency:r.currency,shares:+r.shares,avgCost:+r.avg_cost,price:+r.price,sector:r.sector})));
+      if(j) setJournal(j.map(r=>({id:r.id,ticker:r.ticker,name:r.name,exchange:r.exchange,currency:r.currency,side:r.side,entry:String(r.entry_price||""),exit:r.exit_price?String(r.exit_price):null,shares:String(r.shares||""),stop:String(r.stop_loss||""),target:String(r.target||""),strategy:r.strategy,notes:r.notes,date:r.trade_date,closed:r.closed})));
       setSS("synced");
     } catch(e){ setSS("error"); }
   };
@@ -217,6 +258,12 @@ function TradeIQ({ session }) {
   const f=(n,d=2)=>Number(n).toFixed(d);
   const pc=v=>v>=0?C.green:C.red;
   const ps=v=>v>=0?"+":"";
+  // Currency symbol for a stored holding/trade: use the persisted currency when
+  // present (correct forever), else fall back to inferring from the ticker.
+  const symOf=(o)=>o?.currency?(o.currency==="INR"?"₹":"$"):curSym(o?.ticker);
+  // A ticker is "valid" only if it came from a selected search result.
+  const hValid=!!(newH.meta&&newH.meta.symbol===newH.ticker&&newH.avgCost);
+  const tValid=!!(newT.meta&&newT.meta.symbol===newT.ticker&&newT.entry);
   const totalVal  = holdings.reduce((s,h)=>s+h.shares*h.price,0);
   const totalCost = holdings.reduce((s,h)=>s+h.shares*h.avgCost,0);
   const totalPnL  = totalVal-totalCost;
@@ -224,33 +271,52 @@ function TradeIQ({ session }) {
 
   // ── DB ops ──
   const addHolding = async()=>{
-    if(!newH.ticker||!newH.avgCost) return; setSS("syncing");
-    const {data,error}=await db.from("tradeiq_holdings").insert({user_id:userId,ticker:newH.ticker.toUpperCase(),name:newH.name,shares:+newH.shares||0,avg_cost:+newH.avgCost,price:+(newH.price||newH.avgCost),sector:newH.sector}).select().single();
-    if(!error&&data){setHoldings(p=>[...p,{id:data.id,ticker:data.ticker,name:data.name,shares:+data.shares,avgCost:+data.avg_cost,price:+data.price,sector:data.sector}]);setNewH({ticker:"",name:"",shares:"",avgCost:"",price:"",sector:"Tech"});setShowAddH(false);}
+    if(!hValid) return; setSS("syncing"); // hValid ⇒ ticker came from a selected search result
+    const m=newH.meta;
+    const {data,error}=await db.from("tradeiq_holdings").insert({user_id:userId,ticker:m.symbol,name:newH.name||m.name,exchange:m.exchange,currency:m.currency,shares:+newH.shares||0,avg_cost:+newH.avgCost,price:+(newH.price||newH.avgCost),sector:newH.sector}).select().single();
+    if(!error&&data){setHoldings(p=>[...p,{id:data.id,ticker:data.ticker,name:data.name,exchange:data.exchange,currency:data.currency,shares:+data.shares,avgCost:+data.avg_cost,price:+data.price,sector:data.sector}]);setNewH({ticker:"",name:"",shares:"",avgCost:"",price:"",sector:"Tech",meta:null});setShowAddH(false);}
     setSS(error?"error":"synced");
   };
   const deleteHolding=async(id)=>{setSS("syncing");await db.from("tradeiq_holdings").delete().eq("id",id);setHoldings(p=>p.filter(h=>h.id!==id));setSS("synced");};
   const updatePrice=async(id,price)=>{const p=parseFloat(price);if(isNaN(p))return;setSS("syncing");await db.from("tradeiq_holdings").update({price:p,updated_at:new Date().toISOString()}).eq("id",id);setHoldings(prev=>prev.map(h=>h.id===id?{...h,price:p}:h));setSS("synced");};
   const addTrade=async()=>{
-    if(!newT.ticker||!newT.entry)return;setSS("syncing");
-    const {data,error}=await db.from("tradeiq_journal").insert({user_id:userId,ticker:newT.ticker.toUpperCase(),side:newT.side,entry_price:+newT.entry||null,shares:+newT.shares||null,stop_loss:+newT.stop||null,target:+newT.target||null,strategy:newT.strategy,notes:newT.notes,trade_date:newT.date,closed:false}).select().single();
-    if(!error&&data){setJournal(p=>[{id:data.id,ticker:data.ticker,side:data.side,entry:String(data.entry_price||""),exit:null,shares:String(data.shares||""),stop:String(data.stop_loss||""),target:String(data.target||""),strategy:data.strategy,notes:data.notes,date:data.trade_date,closed:false},...p]);setNewT({ticker:"",side:"BUY",entry:"",stop:"",target:"",shares:"",strategy:"EMA Pullback",notes:"",date:new Date().toISOString().split("T")[0]});setShowAddT(false);}
+    if(!tValid)return;setSS("syncing"); // tValid ⇒ ticker came from a selected search result
+    const m=newT.meta;
+    const {data,error}=await db.from("tradeiq_journal").insert({user_id:userId,ticker:m.symbol,name:m.name,exchange:m.exchange,currency:m.currency,side:newT.side,entry_price:+newT.entry||null,shares:+newT.shares||null,stop_loss:+newT.stop||null,target:+newT.target||null,strategy:newT.strategy,notes:newT.notes,trade_date:newT.date,closed:false}).select().single();
+    if(!error&&data){setJournal(p=>[{id:data.id,ticker:data.ticker,name:data.name,exchange:data.exchange,currency:data.currency,side:data.side,entry:String(data.entry_price||""),exit:null,shares:String(data.shares||""),stop:String(data.stop_loss||""),target:String(data.target||""),strategy:data.strategy,notes:data.notes,date:data.trade_date,closed:false},...p]);setNewT({ticker:"",side:"BUY",entry:"",stop:"",target:"",shares:"",strategy:"EMA Pullback",notes:"",date:new Date().toISOString().split("T")[0],meta:null});setShowAddT(false);}
     setSS(error?"error":"synced");
   };
   const closeTrade=async(id,exitPrice)=>{const ep=parseFloat(exitPrice);if(isNaN(ep))return;setSS("syncing");await db.from("tradeiq_journal").update({exit_price:ep,closed:true}).eq("id",id);setJournal(p=>p.map(t=>t.id===id?{...t,exit:String(ep),closed:true}:t));setSS("synced");};
   const deleteTrade=async(id)=>{setSS("syncing");await db.from("tradeiq_journal").delete().eq("id",id);setJournal(p=>p.filter(t=>t.id!==id));setSS("synced");};
 
   // ── AI — calls /api/chat (Groq key stays secret on Vercel) ──
-  const systemPrompt=useCallback(()=>`You are TradeIQ, expert AI trading advisor for a beginner Indian investor.
+  const systemPrompt=useCallback(()=>{
+    const liveOf=(t)=>liveData[t]?.price;
+    const holdLines=holdings.length===0?"Empty":holdings.map(h=>{
+      const sym=symOf(h);const live=liveOf(h.ticker);const now=live??h.price;
+      const pnl=(now-h.avgCost)*h.shares;
+      return `  ${h.ticker}: ${h.shares} sh · avg ${sym}${h.avgCost} · now ${sym}${f(now)}${live?" (live)":""} · P&L ${ps(pnl)}${sym}${f(Math.abs(pnl))}`;
+    }).join("\n");
+    const wl=(list)=>list.filter(w=>w.price!=null).slice(0,8).map(w=>`${w.ticker.replace(".NS","")} ${curSym(w.ticker)}${w.price?.toFixed(curDp(w.ticker))} RSI:${w.rsi}${w.ema20?` EMA20:${curSym(w.ticker)}${w.ema20}`:""}`).join(", ");
+    return `You are TradeIQ, an expert AI trading advisor for a beginner Indian investor.
 
-PORTFOLIO ($${f(totalVal)} / ₹${f(totalVal*84,0)}):
-${holdings.length===0?"Empty":holdings.map(h=>{const pnl=(h.price-h.avgCost)*h.shares;return`  ${h.ticker}: ${h.shares} shares avg $${h.avgCost} now $${h.price} P&L:${ps(pnl)}$${f(Math.abs(pnl))}`;}).join("\n")}
+PORTFOLIO:
+${holdLines}
 
-MARKET: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}\nUS: ${US_WATCHLIST.slice(0,5).map(w=>`${w.ticker}($${w.price?.toFixed(2)} RSI:${w.rsi})`).join(", ")||"loading"}\nINDIA: ${INDIA_WATCHLIST.slice(0,5).map(w=>`${w.ticker.replace(".NS","")}(Rs${w.price?.toFixed(0)} RSI:${w.rsi})`).join(", ")||"loading"}
+LIVE PRICES (use these EXACT current prices for any entry/stop/target math):
+US ($): ${wl(US_WATCHLIST)||"loading"}
+INDIA (₹): ${wl(INDIA_WATCHLIST)||"loading"}
+
+Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}
 JOURNAL: ${journal.length} trades, ${journal.filter(t=>t.closed).length} closed
 STRATEGIES: EMA Pullback (68% win 1:2.5), Breakout (55% win 1:3), DCA ETF (88% win)
 
-RULES: Capital ₹5,000. Max 2% risk per trade. Always stop-loss. Min 1:2 R:R. No leverage/options. Position=(Capital×2%)÷(Entry−Stop). Be specific, show math, be concise.`,[holdings,journal,totalVal]);
+CRITICAL RULES:
+- CURRENCY: Indian stocks (ticker ends .NS/.BO) are priced in RUPEES (₹). US stocks in DOLLARS ($). ALWAYS quote each stock in its OWN currency — never give a ₹ price for a US stock or a $ price for an Indian stock. Indian-trade capital is ₹5,000; for US trades use $ and note the ₹ equivalent (~₹84/$1).
+- PRICE: Base every entry, stop and target on the CURRENT live price listed above — never a guessed or outdated number. If a stock isn't listed above, ask for its current price instead of assuming.
+- RISK: Max 2% risk per trade. Always a stop-loss. Min 1:2 R:R. No leverage/options. Position size = (Capital × 2%) ÷ (Entry − Stop).
+- Be specific, show the math, be concise.`;
+  },[holdings,journal,totalVal,liveData,marketTab]);
 
   const sendMsg=async()=>{
     if(!chatInput.trim()||aiLoading)return;
@@ -271,7 +337,10 @@ RULES: Capital ₹5,000. Max 2% risk per trade. Always stop-loss. Min 1:2 R:R. N
 
   const quickAsk=(q)=>{setChatInput(q);setTab("ai");setTimeout(()=>document.getElementById("tiq-in")?.focus(),150);};
 
-  const scanResults=WATCHLIST.filter(w=>w.price&&w.ema20&&w.ema200).map(w=>{const nearEma=Math.abs(w.price-w.ema20)/w.ema20<0.03;const sig=(nearEma&&w.price>w.ema200&&w.rsi>=38&&w.rsi<=62)?"EMA PULLBACK":(w.price>w.ema200&&w.rsi>60&&w.rsi<75)?"BREAKOUT WATCH":"WAIT";const sigC=sig==="EMA PULLBACK"?C.green:sig==="BREAKOUT WATCH"?C.gold:C.muted;const curr=w.currency==="INR"?"₹":"$";const cap=w.currency==="INR"?(totalVal||59)*84:(totalVal||59);return{...w,signal:sig,sigColor:sigC,curr,posSize:f(cap*0.02/(w.price*0.025),3),stopPrice:curr+f(w.price*0.975,w.currency==="INR"?0:2),targetPrice:curr+f(w.price*1.06,w.currency==="INR"?0:2)};}).sort((a,b)=>(b.signal==="EMA PULLBACK"?1:0)-(a.signal==="EMA PULLBACK"?1:0));
+  // stopPrice/targetPrice are kept NUMERIC (no currency symbol baked in) so the
+  // "Log" button can feed them straight into the journal's number fields. The
+  // currency symbol (curr) is applied only at display time.
+  const scanResults=WATCHLIST.filter(w=>w.price&&w.ema20&&w.ema200).map(w=>{const nearEma=Math.abs(w.price-w.ema20)/w.ema20<0.03;const sig=(nearEma&&w.price>w.ema200&&w.rsi>=38&&w.rsi<=62)?"EMA PULLBACK":(w.price>w.ema200&&w.rsi>60&&w.rsi<75)?"BREAKOUT WATCH":"WAIT";const sigC=sig==="EMA PULLBACK"?C.green:sig==="BREAKOUT WATCH"?C.gold:C.muted;const curr=curSym(w.ticker);const dp=curDp(w.ticker);const cap=isINR(w.ticker)?(totalVal||59)*84:(totalVal||59);return{...w,signal:sig,sigColor:sigC,curr,posSize:f(cap*0.02/(w.price*0.025),3),stopPrice:f(w.price*0.975,dp),targetPrice:f(w.price*1.06,dp)};}).sort((a,b)=>(b.signal==="EMA PULLBACK"?1:0)-(a.signal==="EMA PULLBACK"?1:0));
 
   const syncLabel={idle:"",syncing:"⟳ Syncing",synced:"✓ Synced",error:"⚠ Error"};
   const syncColor={idle:C.muted,syncing:C.gold,synced:C.green,error:C.red};
@@ -293,24 +362,24 @@ RULES: Capital ₹5,000. Max 2% risk per trade. Always stop-loss. Min 1:2 R:R. N
           </div>
           {showAddH&&(<div style={{background:C.s2,border:`1px solid ${C.border}`,borderRadius:6,padding:12,marginBottom:12}}>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
-              <Inp label="Ticker" value={newH.ticker} onChange={e=>setNewH(p=>({...p,ticker:e.target.value.toUpperCase()}))} placeholder="NVDA"/>
+              <TickerSearch theme={C} token={authToken} label="Ticker" value={newH.ticker} market={isINR(newH.ticker)?"india":marketTab} onChange={(t)=>setNewH(p=>({...p,ticker:t,meta:p.meta&&p.meta.symbol===t?p.meta:null}))} onSelect={(r)=>setNewH(p=>({...p,ticker:r.symbol,name:r.name||p.name,meta:r}))} placeholder="Search NVIDIA, Reliance…"/>
               <Inp label="Name" value={newH.name} onChange={e=>setNewH(p=>({...p,name:e.target.value}))} placeholder="NVIDIA Corp"/>
               <Inp label="Shares" type="number" value={newH.shares} onChange={e=>setNewH(p=>({...p,shares:e.target.value}))} placeholder="0.5"/>
-              <Inp label="Avg Cost $" type="number" value={newH.avgCost} onChange={e=>setNewH(p=>({...p,avgCost:e.target.value}))} placeholder="205.50"/>
-              <Inp label="Current Price $" type="number" value={newH.price} onChange={e=>setNewH(p=>({...p,price:e.target.value}))} placeholder="207.10"/>
+              <Inp label={`Avg Cost ${curSym(newH.ticker)}`} type="number" value={newH.avgCost} onChange={e=>setNewH(p=>({...p,avgCost:e.target.value}))} placeholder={isINR(newH.ticker)?"2750.00":"205.50"}/>
+              <Inp label={`Current Price ${curSym(newH.ticker)}`} type="number" value={newH.price} onChange={e=>setNewH(p=>({...p,price:e.target.value}))} placeholder={isINR(newH.ticker)?"2785.00":"207.10"}/>
               <Sel label="Sector" value={newH.sector} onChange={e=>setNewH(p=>({...p,sector:e.target.value}))} options={["Tech","Finance","Healthcare","Energy","Consumer","Industrial"]}/>
             </div>
-            <div style={{display:"flex",gap:8}}><Btn solid color={C.accent} onClick={addHolding}>{syncStatus==="syncing"?<Spinner/>:"Save"}</Btn><Btn small color={C.muted} onClick={()=>setShowAddH(false)}>Cancel</Btn></div>
+            <div style={{display:"flex",gap:8,alignItems:"center"}}><Btn solid color={hValid?C.accent:C.muted} onClick={addHolding}>{syncStatus==="syncing"?<Spinner/>:"Save"}</Btn><Btn small color={C.muted} onClick={()=>{setShowAddH(false);setNewH(p=>({...p,meta:null}));}}>Cancel</Btn>{newH.ticker&&!newH.meta&&<span style={{fontSize:9,color:C.gold}}>↑ Pick a ticker from the dropdown</span>}{newH.meta&&<span style={{fontSize:9,color:C.muted}}>{newH.meta.name} · {newH.meta.exchange} · {newH.meta.currency}</span>}</div>
           </div>)}
           {holdings.length===0?(<div style={{textAlign:"center",padding:"28px 10px",color:C.muted}}><div style={{fontSize:26,marginBottom:8}}>📂</div><div style={{fontFamily:C.display,fontWeight:700,color:C.text,marginBottom:5}}>No holdings yet</div><div style={{fontSize:11,lineHeight:1.6}}>Add what you own on Vested.<br/>Syncs to all your devices instantly.</div></div>):(
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}><thead><tr>{["Ticker","Shares","Avg","Now","P&L","Update",""].map(h=>(<th key={h} style={{textAlign:"left",padding:"6px 5px",fontSize:9,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:C.muted,borderBottom:`1px solid ${C.border}`}}>{h}</th>))}</tr></thead>
-          <tbody>{holdings.map(h=>{const pnl=(h.price-h.avgCost)*h.shares;const pp=((h.price-h.avgCost)/h.avgCost)*100;const sp=WATCHLIST.find(w=>w.ticker===h.ticker)?.spark;return(
-            <tr key={h.id} className="tiq-row" style={{cursor:"pointer"}} onClick={()=>quickAsk(`Analyse my ${h.ticker}: ${h.shares} shares avg $${h.avgCost} now $${h.price}. Hold, add, or sell?`)}>
+          <tbody>{holdings.map(h=>{const pnl=(h.price-h.avgCost)*h.shares;const pp=((h.price-h.avgCost)/h.avgCost)*100;const sp=WATCHLIST.find(w=>w.ticker===h.ticker)?.spark;const sym=symOf(h);return(
+            <tr key={h.id} className="tiq-row" style={{cursor:"pointer"}} onClick={()=>quickAsk(`Analyse my ${h.ticker}: ${h.shares} shares avg ${sym}${h.avgCost} now ${sym}${h.price}. Hold, add, or sell?`)}>
               <td style={{padding:"8px 5px"}}><div style={{fontFamily:C.display,fontWeight:700}}>{h.ticker}</div><div style={{fontSize:9,color:C.muted}}>{h.sector}</div></td>
               <td style={{padding:"8px 5px"}}>{h.shares}</td>
-              <td style={{padding:"8px 5px",color:C.muted}}>${f(h.avgCost)}</td>
-              <td style={{padding:"8px 5px"}}>${f(h.price)}</td>
-              <td style={{padding:"8px 5px"}}><div style={{color:pc(pnl),fontWeight:600}}>{ps(pnl)}${f(Math.abs(pnl))}</div><div style={{fontSize:9,color:pc(pp)}}>{ps(pp)}{f(pp)}%</div></td>
+              <td style={{padding:"8px 5px",color:C.muted}}>{sym}{f(h.avgCost)}</td>
+              <td style={{padding:"8px 5px"}}>{sym}{f(h.price)}</td>
+              <td style={{padding:"8px 5px"}}><div style={{color:pc(pnl),fontWeight:600}}>{ps(pnl)}{sym}{f(Math.abs(pnl))}</div><div style={{fontSize:9,color:pc(pp)}}>{ps(pp)}{f(pp)}%</div></td>
               <td style={{padding:"8px 5px"}} onClick={e=>e.stopPropagation()}><input className="tiq-input" type="number" defaultValue={h.price} style={{background:C.s3,border:`1px solid ${C.border}`,borderRadius:4,padding:"3px 6px",color:C.text,fontFamily:C.mono,fontSize:10,width:75}} onBlur={e=>updatePrice(h.id,e.target.value)} onKeyDown={e=>e.key==="Enter"&&updatePrice(h.id,e.target.value)}/></td>
               <td style={{padding:"8px 5px"}} onClick={e=>{e.stopPropagation();deleteHolding(h.id)}}><span style={{color:C.red,cursor:"pointer"}}>✕</span></td>
             </tr>);})}</tbody></table>)}
@@ -319,15 +388,15 @@ RULES: Capital ₹5,000. Max 2% risk per trade. Always stop-loss. Min 1:2 R:R. N
         <Card>
           <MarketHeader marketTab={marketTab} setMarketTab={setMarketTab} priceStatus={priceStatus} fetchPrices={fetchPrices} lastUpdated={lastUpdated}/>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}><thead><tr>{["Stock","Price","RSI","Signal",""].map(h=>(<th key={h} style={{textAlign:"left",padding:"6px 5px",fontSize:9,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:C.muted,borderBottom:`1px solid ${C.border}`}}>{h}</th>))}</tr></thead>
-          <tbody>{WATCHLIST.slice(0,8).map(w=>{const sc=scanResults.find(s=>s.ticker===w.ticker);const sym=w.ticker.replace(".NS","");const curr=w.currency==="INR"?"₹":"$";const dp=w.currency==="INR"?0:2;return(
-            <tr key={w.ticker} className="tiq-row" style={{cursor:"pointer"}} onClick={()=>{setChartTicker(w.ticker);setTab('chart');}}>
-              <td style={{padding:"7px 5px"}}><div style={{fontFamily:C.display,fontWeight:700,fontSize:12}}>{sym}</div><div style={{fontSize:9,color:w.chg>=0?C.green:C.red}}>{ps(w.chg)}{w.chg}%</div></td>
-              <td style={{padding:"7px 5px",fontWeight:600}}>{curr}{w.price?.toFixed(dp)}</td>
-              <td style={{padding:"7px 5px"}}><RSIMeter value={w.rsi}/></td>
+          <tbody>{WATCHLIST.slice(0,8).map(w=>{const sc=scanResults.find(s=>s.ticker===w.ticker);const sym=w.ticker.replace(".NS","");const curr=curSym(w.ticker);const dp=curDp(w.ticker);const pending=w.price==null;return(
+            <tr key={w.ticker} className="tiq-row" style={{cursor:"pointer"}} onClick={()=>{if(!pending){setChartTicker(w.ticker);setTab('chart');}}}>
+              <td style={{padding:"7px 5px"}}><div style={{fontFamily:C.display,fontWeight:700,fontSize:12}}>{sym}{w.custom&&<span style={{fontSize:8,color:C.accent,marginLeft:4,verticalAlign:"middle"}}>★</span>}</div><div style={{fontSize:9,color:w.chg>=0?C.green:C.red}}>{pending?"":`${ps(w.chg)}${w.chg}%`}</div></td>
+              <td style={{padding:"7px 5px",fontWeight:600}}>{pending?<span style={{color:C.muted,fontSize:9}}>fetching…</span>:`${curr}${w.price.toFixed(dp)}`}</td>
+              <td style={{padding:"7px 5px"}}>{pending?<span style={{color:C.muted}}>—</span>:<RSIMeter value={w.rsi}/>}</td>
               <td style={{padding:"7px 5px"}}><Tag c={sc?.sigColor||C.muted}>{sc?.signal||"WAIT"}</Tag></td>
-              <td style={{padding:"7px 5px"}}><Sparkline data={w.spark} color={w.chg>=0?C.green:C.red} w={55} h={22}/></td>
+              <td style={{padding:"7px 5px"}} onClick={w.custom?(e=>{e.stopPropagation();removeCustomTicker(w.ticker);}):undefined}>{w.custom?<span title="Remove" style={{color:C.red,cursor:"pointer",fontSize:12}}>✕</span>:<Sparkline data={w.spark} color={w.chg>=0?C.green:C.red} w={55} h={22}/>}</td>
             </tr>);})}</tbody></table>
-          <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${C.border}`}}>{showAddTicker?(<div style={{display:"flex",gap:8}}><input className="tiq-input" value={addTickerInput} onChange={e=>setAddTickerInput(e.target.value.toUpperCase())} placeholder={marketTab==="india"?"e.g. WIPRO (auto .NS)":"e.g. COIN"} onKeyDown={e=>e.key==="Enter"&&addCustomTicker()} style={{flex:1,background:C.s2,border:`1px solid ${C.border}`,borderRadius:5,padding:"6px 10px",color:C.text,fontFamily:C.mono,fontSize:11}}/><Btn small solid color={C.accent} onClick={addCustomTicker}>Add</Btn><Btn small color={C.muted} onClick={()=>setShowAddTicker(false)}>✕</Btn></div>):(<button onClick={()=>setShowAddTicker(true)} style={{fontSize:10,color:C.muted,background:"none",border:"none",cursor:"pointer",fontFamily:C.mono}}>+ Add {marketTab==="india"?"Indian":"US"} stock</button>)}</div>
+          <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${C.border}`}}>{showAddTicker?(<div><div style={{display:"flex",gap:8,alignItems:"flex-start"}}><div style={{flex:1}}><TickerSearch theme={C} token={authToken} value={addTickerInput} market={marketTab} onChange={setAddTickerInput} onSelect={(r)=>addCustomTicker(r)} placeholder={marketTab==="india"?"Search e.g. Reliance, Wipro…":"Search e.g. Coinbase, COIN…"}/></div><Btn small color={C.muted} onClick={()=>{setShowAddTicker(false);setAddTickerInput("");}}>✕</Btn></div><div style={{fontSize:9,color:C.muted,marginTop:5}}>Search a name or symbol, then pick from the list to add it.</div></div>):(<button onClick={()=>setShowAddTicker(true)} style={{fontSize:10,color:C.muted,background:"none",border:"none",cursor:"pointer",fontFamily:C.mono}}>+ Add {marketTab==="india"?"Indian":"US"} stock</button>)}</div>
         </Card>
       </div>
       <Card><CT>Quick AI Actions</CT><div style={{display:"flex",flexWrap:"wrap",gap:7}}>{[["Analyse my full portfolio and give me a risk report",C.accent],["Best trade setup from my watchlist today?",C.accent],["How do I grow ₹5,000 to ₹8,000 safely in 3 months?",C.green],["Position size: TSLA entry $248 stop $238",C.gold],["Build a new strategy for volatile tech stocks",C.purple],["Should I buy NVDA now or wait for a pullback?",C.blue]].map(([q,col])=>(<button key={q} className="qbtn tiq-btn" onClick={()=>quickAsk(q)} style={{background:col+"12",border:`1px solid ${col}25`,borderRadius:5,color:col,fontFamily:C.mono,fontSize:10,padding:"6px 11px"}}>{q}</button>))}</div></Card>
@@ -408,15 +477,15 @@ RULES: Capital ₹5,000. Max 2% risk per trade. Always stop-loss. Min 1:2 R:R. N
       </div>
     </div>
     <Card><table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}><thead><tr>{["Stock","Price","EMA20","EMA200","RSI","Signal","Stop","Target","Pos Size"].map(h=>(<th key={h} style={{textAlign:"left",padding:"7px 6px",fontSize:9,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:C.muted,borderBottom:`1px solid ${C.border}`}}>{h}</th>))}</tr></thead>
-    <tbody>{scanResults.map(w=>(<tr key={w.ticker} className="tiq-row" style={{cursor:"pointer"}} onClick={()=>quickAsk(`Full analysis: ${w.ticker} $${w.price} RSI ${w.rsi} EMA20 $${w.ema20} EMA200 $${w.ema200}. Signal: ${w.signal}. Exact entry, stop, target, shares for ₹5,000.`)}>
+    <tbody>{scanResults.map(w=>(<tr key={w.ticker} className="tiq-row" style={{cursor:"pointer"}} onClick={()=>quickAsk(`Full analysis: ${w.ticker} ${w.curr}${w.price} RSI ${w.rsi} EMA20 ${w.curr}${w.ema20} EMA200 ${w.curr}${w.ema200}. Signal: ${w.signal}. Exact entry, stop, target, shares ${isINR(w.ticker)?"for ₹5,000":"in $ (capital ₹5,000 ≈ $60)"}.`)}>
       <td style={{padding:"9px 6px"}}><div style={{fontFamily:C.display,fontWeight:700}}>{w.ticker}</div><div style={{fontSize:9,color:C.muted}}>{w.name}</div></td>
-      <td style={{padding:"9px 6px"}}><div style={{fontWeight:600}}>${w.price}</div><div style={{fontSize:9,color:w.chg>=0?C.green:C.red}}>{ps(w.chg)}{w.chg}%</div></td>
-      <td style={{padding:"9px 6px"}}><div>${w.ema20}</div><div style={{fontSize:9,color:Math.abs(w.price-w.ema20)/w.ema20<0.025?C.green:C.muted}}>{Math.abs(w.price-w.ema20)/w.ema20<0.025?"Near ✓":`${f(((w.price-w.ema20)/w.ema20)*100)}%`}</div></td>
-      <td style={{padding:"9px 6px"}}><div>${w.ema200}</div><div style={{fontSize:9,color:w.price>w.ema200?C.green:C.red}}>{w.price>w.ema200?"Above ✓":"Below ✗"}</div></td>
+      <td style={{padding:"9px 6px"}}><div style={{fontWeight:600}}>{w.curr}{w.price}</div><div style={{fontSize:9,color:w.chg>=0?C.green:C.red}}>{ps(w.chg)}{w.chg}%</div></td>
+      <td style={{padding:"9px 6px"}}><div>{w.curr}{w.ema20}</div><div style={{fontSize:9,color:Math.abs(w.price-w.ema20)/w.ema20<0.025?C.green:C.muted}}>{Math.abs(w.price-w.ema20)/w.ema20<0.025?"Near ✓":`${f(((w.price-w.ema20)/w.ema20)*100)}%`}</div></td>
+      <td style={{padding:"9px 6px"}}><div>{w.curr}{w.ema200}</div><div style={{fontSize:9,color:w.price>w.ema200?C.green:C.red}}>{w.price>w.ema200?"Above ✓":"Below ✗"}</div></td>
       <td style={{padding:"9px 6px"}}><RSIMeter value={w.rsi}/></td>
       <td style={{padding:"9px 6px"}}><Tag c={w.sigColor}>{w.signal}</Tag></td>
-      <td style={{padding:"9px 6px",color:C.red,fontSize:10}}>${w.stopPrice}</td>
-      <td style={{padding:"9px 6px",color:C.green,fontSize:10}}>${w.targetPrice}</td>
+      <td style={{padding:"9px 6px",color:C.red,fontSize:10}}>{w.curr}{w.stopPrice}</td>
+      <td style={{padding:"9px 6px",color:C.green,fontSize:10}}>{w.curr}{w.targetPrice}</td>
       <td style={{padding:"9px 6px"}}>{w.signal!=="WAIT"?(<div><div style={{color:C.accent,fontSize:10,fontWeight:600,marginBottom:3}}>{w.posSize} sh</div><Btn small color={C.accent} onClick={e=>{e.stopPropagation();setNewT(p=>({...p,ticker:w.ticker,entry:String(w.price),stop:w.stopPrice,target:w.targetPrice}));setTab("journal");setShowAddT(true);}}>Log</Btn></div>):<span style={{color:C.muted,fontSize:10}}>—</span>}</td>
     </tr>))}</tbody></table></Card>
     <Card><CT>Position Size Calculator</CT>
@@ -473,39 +542,41 @@ RULES: Capital ₹5,000. Max 2% risk per trade. Always stop-loss. Min 1:2 R:R. N
     {showAddT&&(<Card glow>
       <CT>New Trade Entry</CT>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10,marginBottom:10}}>
-        <Inp label="Ticker" value={newT.ticker} onChange={e=>setNewT(p=>({...p,ticker:e.target.value.toUpperCase()}))} placeholder="NVDA"/>
+        <TickerSearch theme={C} token={authToken} label="Ticker" value={newT.ticker} market={isINR(newT.ticker)?"india":marketTab} onChange={(t)=>setNewT(p=>({...p,ticker:t,meta:p.meta&&p.meta.symbol===t?p.meta:null}))} onSelect={(r)=>setNewT(p=>({...p,ticker:r.symbol,meta:r}))} placeholder="Search NVIDIA, Reliance…"/>
         <Sel label="Side" value={newT.side} onChange={e=>setNewT(p=>({...p,side:e.target.value}))} options={["BUY","SELL"]}/>
-        <Inp label="Entry $" type="number" value={newT.entry} onChange={e=>setNewT(p=>({...p,entry:e.target.value}))} placeholder="205.50"/>
+        <Inp label={`Entry ${curSym(newT.ticker)}`} type="number" value={newT.entry} onChange={e=>setNewT(p=>({...p,entry:e.target.value}))} placeholder={isINR(newT.ticker)?"2750.00":"205.50"}/>
         <Inp label="Shares" type="number" value={newT.shares} onChange={e=>setNewT(p=>({...p,shares:e.target.value}))} placeholder="0.25"/>
-        <Inp label="Stop-Loss $" type="number" value={newT.stop} onChange={e=>setNewT(p=>({...p,stop:e.target.value}))} placeholder="198.00"/>
-        <Inp label="Target $" type="number" value={newT.target} onChange={e=>setNewT(p=>({...p,target:e.target.value}))} placeholder="219.00"/>
+        <Inp label={`Stop-Loss ${curSym(newT.ticker)}`} type="number" value={newT.stop} onChange={e=>setNewT(p=>({...p,stop:e.target.value}))} placeholder={isINR(newT.ticker)?"2680.00":"198.00"}/>
+        <Inp label={`Target ${curSym(newT.ticker)}`} type="number" value={newT.target} onChange={e=>setNewT(p=>({...p,target:e.target.value}))} placeholder={isINR(newT.ticker)?"2900.00":"219.00"}/>
         <Sel label="Strategy" value={newT.strategy} onChange={e=>setNewT(p=>({...p,strategy:e.target.value}))} options={STRATEGIES.map(s=>s.name)}/>
         <Inp label="Date" type="date" value={newT.date} onChange={e=>setNewT(p=>({...p,date:e.target.value}))}/>
       </div>
       <div style={{marginBottom:10}}><div style={{fontSize:9,color:C.muted,marginBottom:3,textTransform:"uppercase",letterSpacing:"0.1em"}}>Notes / Reason</div>
         <textarea className="tiq-input" style={{background:C.s2,border:`1px solid ${C.border}`,borderRadius:5,padding:"8px 11px",color:C.text,fontFamily:C.mono,fontSize:11,width:"100%",height:55,resize:"vertical"}} placeholder="Why am I taking this trade?" value={newT.notes} onChange={e=>setNewT(p=>({...p,notes:e.target.value}))}/>
       </div>
-      {newT.entry&&newT.stop&&+newT.entry>+newT.stop&&(<div style={{background:C.s2,border:`1px solid ${C.border}`,borderRadius:6,padding:12,marginBottom:10}}>
-        <div style={{fontSize:9,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:8}}>Trade Math</div>
-        <div style={{display:"flex",gap:18,flexWrap:"wrap"}}>{[["Risk/share",`$${f(+newT.entry-+newT.stop)}`,C.red],["Max loss",`$${f((totalVal||59)*0.02)}`,C.red],["Ideal shares",`${f((totalVal||59)*0.02/(+newT.entry-+newT.stop),3)}`,C.accent],["R:R",newT.target?`1:${f((+newT.target-+newT.entry)/(+newT.entry-+newT.stop))}`:"-",(+newT.target-+newT.entry)/(+newT.entry-+newT.stop)>=2?C.green:C.red]].map(([l,v,c])=>(<div key={l}><div style={{fontSize:9,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:2}}>{l}</div><div style={{fontFamily:C.display,fontWeight:700,color:c,fontSize:14}}>{v}</div></div>))}</div>
-      </div>)}
-      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-        <Btn solid color={C.green} onClick={addTrade}>{syncStatus==="syncing"?<Spinner/>:"✓ Save Trade"}</Btn>
-        <Btn color={C.accent} onClick={()=>quickAsk(`Review before I trade: ${newT.ticker} ${newT.side} entry $${newT.entry} stop $${newT.stop} target $${newT.target}. Valid setup? Risk correct for ₹5,000?`)}>AI Review First</Btn>
+      {newT.entry&&newT.stop&&+newT.entry>+newT.stop&&(()=>{const tSym=curSym(newT.ticker);const cap=isINR(newT.ticker)?5000:(totalVal||59);const rps=+newT.entry-+newT.stop;return(<div style={{background:C.s2,border:`1px solid ${C.border}`,borderRadius:6,padding:12,marginBottom:10}}>
+        <div style={{fontSize:9,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:8}}>Trade Math · capital {tSym}{f(cap,0)}</div>
+        <div style={{display:"flex",gap:18,flexWrap:"wrap"}}>{[["Risk/share",`${tSym}${f(rps)}`,C.red],["Max loss",`${tSym}${f(cap*0.02)}`,C.red],["Ideal shares",`${f(cap*0.02/rps,3)}`,C.accent],["R:R",newT.target?`1:${f((+newT.target-+newT.entry)/rps)}`:"-",(+newT.target-+newT.entry)/rps>=2?C.green:C.red]].map(([l,v,c])=>(<div key={l}><div style={{fontSize:9,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:2}}>{l}</div><div style={{fontFamily:C.display,fontWeight:700,color:c,fontSize:14}}>{v}</div></div>))}</div>
+      </div>);})()}
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+        <Btn solid color={tValid?C.green:C.muted} onClick={addTrade}>{syncStatus==="syncing"?<Spinner/>:"✓ Save Trade"}</Btn>
+        <Btn color={C.accent} onClick={()=>quickAsk(`Review before I trade: ${newT.ticker} ${newT.side} entry ${curSym(newT.ticker)}${newT.entry} stop ${curSym(newT.ticker)}${newT.stop} target ${curSym(newT.ticker)}${newT.target}. Valid setup? Risk correct for ${isINR(newT.ticker)?"₹5,000":"my capital (~$60 / ₹5,000)"}?`)}>AI Review First</Btn>
+        {newT.ticker&&!newT.meta&&<span style={{fontSize:9,color:C.gold}}>↑ Pick a ticker from the dropdown</span>}
+        {newT.meta&&<span style={{fontSize:9,color:C.muted}}>{newT.meta.name} · {newT.meta.exchange} · {newT.meta.currency}</span>}
       </div>
     </Card>)}
     {journal.length===0?(<Card style={{textAlign:"center",padding:48}}><div style={{fontSize:34,marginBottom:10}}>📓</div><div style={{fontFamily:C.display,fontWeight:700,fontSize:15,marginBottom:6}}>No trades yet</div><div style={{color:C.muted,fontSize:12,maxWidth:360,margin:"0 auto",lineHeight:1.6}}>Log every trade. Syncs across phone and laptop automatically.</div></Card>):
-    journal.map(t=>{const isOpen=!t.closed;const pnl=t.closed?(+t.exit-+t.entry)*+t.shares:null;const pp=t.closed?((+t.exit-+t.entry)/+t.entry)*100:null;return(
+    journal.map(t=>{const isOpen=!t.closed;const pnl=t.closed?(+t.exit-+t.entry)*+t.shares:null;const pp=t.closed?((+t.exit-+t.entry)/+t.entry)*100:null;const sym=symOf(t);return(
       <Card key={t.id} style={{borderLeft:`3px solid ${isOpen?C.accent:pnl>=0?C.green:C.red}`}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8}}>
-          <div><span style={{fontFamily:C.display,fontWeight:800,fontSize:15,marginRight:8}}>{t.ticker}</span><Tag c={t.side==="BUY"?C.green:C.red}>{t.side}</Tag><Tag c={C.purple}>{t.strategy}</Tag>{isOpen&&<Tag c={C.accent}>OPEN</Tag>}</div>
+          <div><span style={{fontFamily:C.display,fontWeight:800,fontSize:15,marginRight:8}}>{t.ticker}</span><Tag c={t.side==="BUY"?C.green:C.red}>{t.side}</Tag><Tag c={C.purple}>{t.strategy}</Tag><Tag c={sym==="₹"?C.gold:C.blue}>{sym==="₹"?"₹ INR":"$ USD"}</Tag>{isOpen&&<Tag c={C.accent}>OPEN</Tag>}</div>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
-            {!isOpen&&pnl!==null&&<span style={{fontFamily:C.display,fontWeight:700,color:pc(pnl),fontSize:14}}>{ps(pnl)}${f(Math.abs(pnl))} ({ps(pp)}{f(pp)}%)</span>}
-            {isOpen&&<Btn small color={C.gold} onClick={()=>{const ep=prompt("Exit price:");if(ep&&!isNaN(ep))closeTrade(t.id,ep);}}>Close</Btn>}
+            {!isOpen&&pnl!==null&&<span style={{fontFamily:C.display,fontWeight:700,color:pc(pnl),fontSize:14}}>{ps(pnl)}{sym}{f(Math.abs(pnl))} ({ps(pp)}{f(pp)}%)</span>}
+            {isOpen&&<Btn small color={C.gold} onClick={()=>{const ep=prompt(`Exit price (${sym}):`);if(ep&&!isNaN(ep))closeTrade(t.id,ep);}}>Close</Btn>}
             <Btn small color={C.red} onClick={()=>deleteTrade(t.id)}>✕</Btn>
           </div>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(100px,1fr))",gap:6,marginTop:10}}>{[["Date",t.date],["Entry",`$${t.entry}`],["Stop",`$${t.stop}`],["Target",`$${t.target}`],["Shares",t.shares],["Exit",t.closed?`$${t.exit}`:"Open"]].map(([l,v])=>(<div key={l}><div style={{fontSize:9,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:2}}>{l}</div><div style={{fontSize:11,fontWeight:600,color:C.text}}>{v||"—"}</div></div>))}</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(100px,1fr))",gap:6,marginTop:10}}>{[["Date",t.date],["Entry",`${sym}${t.entry}`],["Stop",`${sym}${t.stop}`],["Target",`${sym}${t.target}`],["Shares",t.shares],["Exit",t.closed?`${sym}${t.exit}`:"Open"]].map(([l,v])=>(<div key={l}><div style={{fontSize:9,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:2}}>{l}</div><div style={{fontSize:11,fontWeight:600,color:C.text}}>{v||"—"}</div></div>))}</div>
         {t.notes&&<div style={{marginTop:8,fontSize:10,color:C.muted,borderTop:`1px solid ${C.border}`,paddingTop:8,lineHeight:1.5}}>{t.notes}</div>}
       </Card>);})}
   </div>);
@@ -516,7 +587,7 @@ RULES: Capital ₹5,000. Max 2% risk per trade. Always stop-loss. Min 1:2 R:R. N
       {[["RSI",C.accent,"Momentum indicator 0–100. Under 30 = oversold. Over 70 = overbought. Entry sweet spot: 40–58.","Explain RSI in depth with real examples. How to use with EMA Pullback?"],["Support & Resistance",C.gold,"Price levels where buyers/sellers repeatedly appear. The most fundamental TA skill.","Teach support and resistance from scratch with 3 real chart examples."],["Candlestick Patterns",C.purple,"Each candle tells a story. Hammer, Engulfing, Doji — your confirmation signals.","5 most important candlestick patterns for swing trading? Which are most reliable?"],["Risk Management",C.green,"The 2% rule: never risk more than 2% per trade. This alone keeps you in the game.","Deep dive risk management for ₹5,000. 2% rule, position sizing, top 5 beginner mistakes."],["MACD",C.blue,"Momentum indicator comparing two EMAs. Crossovers signal trend changes.","Explain MACD for a beginner. How to use with EMA Pullback strategy?"],["Trading Psychology",C.red,"FOMO, revenge trading, panic selling — destroy more accounts than bad strategies.","5 biggest psychological mistakes beginner traders make and how to avoid them?"]].map(([title,color,desc,q])=>(<Card key={title} style={{borderTop:`3px solid ${color}`,cursor:"pointer"}} onClick={()=>quickAsk(q)}><div style={{fontFamily:C.display,fontWeight:700,fontSize:14,color,marginBottom:6}}>{title}</div><div style={{fontSize:11,color:C.muted,lineHeight:1.6,marginBottom:10}}>{desc}</div><div style={{fontSize:10,color}}>Click to learn with AI →</div></Card>))}
     </div>
     <Card style={{background:C.s2}}><CT>Free Resources</CT>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:8}}>{[["📚 Zerodha Varsity","Best free trading course","zerodha.com/varsity"],["📊 TradingView","Charts, alerts, paper trading","tradingview.com"],["🔑 Groq Console","Free AI API key","console.groq.com"],["📱 Vested","US stocks from India","vestedfinance.co"],["🎓 Investopedia","Every concept explained","investopedia.com"],["📺 CA Rachana Ranade","Best Hindi trading YouTube","youtube.com"]].map(([n,d,u])=>(<div key={n} style={{background:C.s1,border:`1px solid ${C.border}`,borderRadius:6,padding:10}}><div style={{fontFamily:C.display,fontWeight:700,fontSize:12,marginBottom:3}}>{n}</div><div style={{fontSize:10,color:C.muted,marginBottom:4}}>{d}</div><div style={{fontSize:9,color:C.accent}}>{u}</div></div>))}</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:8}}>{[["📚 Zerodha Varsity","Best free trading course","https://zerodha.com/varsity/"],["📊 TradingView","Charts, alerts, paper trading","https://www.tradingview.com/"],["🔑 Groq Console","Free AI API key","https://console.groq.com/"],["📱 Vested","US stocks from India","https://vestedfinance.com/"],["🎓 Investopedia","Every concept explained","https://www.investopedia.com/"],["📺 CA Rachana Ranade","Best Hindi trading YouTube","https://www.youtube.com/@CARachanaRanade"]].map(([n,d,u])=>(<a key={n} href={u} target="_blank" rel="noopener noreferrer" className="tiq-card" style={{display:"block",textDecoration:"none",background:C.s1,border:`1px solid ${C.border}`,borderRadius:6,padding:10,cursor:"pointer"}}><div style={{fontFamily:C.display,fontWeight:700,fontSize:12,marginBottom:3,color:C.text}}>{n}</div><div style={{fontSize:10,color:C.muted,marginBottom:4}}>{d}</div><div style={{fontSize:9,color:C.accent}}>{u.replace(/^https?:\/\//,"").replace(/\/$/,"")} ↗</div></a>))}</div>
     </Card>
   </div>);
 

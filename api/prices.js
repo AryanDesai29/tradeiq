@@ -3,18 +3,30 @@
 // endpoint now returns 401 Unauthorized, so we derive price, % change,
 // EMA20/EMA200, RSI and the sparkline from one year of daily candles.
 
+import { verifyUser } from './_auth.js';
+import { enforce, callerKey, tooMany } from './_ratelimit.js';
+
 export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
+
+  // Per-user when signed in, else per-IP. 60 requests/hour is plenty — the UI
+  // only refreshes every 5 minutes plus manual taps.
+  const user = await verifyUser(req);
+  const rl = await enforce(callerKey(req, user?.id), [['prices_hourly', 60, 3600]]);
+  if (!rl.ok) return tooMany(res, rl.retryAfter);
 
   const US_TICKERS    = ['NVDA','TSLA','AAPL','META','GOOGL','AMD','MSFT','PLTR','AMZN','NFLX','SPY','QQQ'];
   const INDIA_TICKERS = ['RELIANCE.NS','TCS.NS','HDFCBANK.NS','INFY.NS','ICICIBANK.NS','HINDUNILVR.NS','SBIN.NS','BAJFINANCE.NS','WIPRO.NS','AXISBANK.NS','TATAMOTORS.NS','ADANIENT.NS'];
 
   // User custom tickers (e.g. ?extra=COIN,WIPRO.NS) appended to the base set.
-  // Validated against a strict pattern so we never forward junk to Yahoo.
+  // Strict charset filter; existence is then validated by the chart fetch
+  // below (a symbol that returns no candles is simply dropped from the result),
+  // so junk never produces a fake price entry.
   const extra = String(req.query.extra || '')
     .split(',')
     .map(s => s.trim().toUpperCase())
-    .filter(s => /^[A-Z0-9.\-]{1,20}$/.test(s));
+    .filter(s => /^[A-Z0-9.\-]{1,20}$/.test(s))
+    .slice(0, 30); // hard cap so a crafted query can't fan out unbounded Yahoo calls
 
   const ALL = [...new Set([...US_TICKERS, ...INDIA_TICKERS, ...extra])];
 
