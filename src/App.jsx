@@ -51,16 +51,12 @@ const RSIMeter=({value=50})=>{const v=Math.min(100,Math.max(0,value));const col=
 const Dots=()=>(<div style={{display:"flex",gap:5,padding:"4px 0",alignItems:"center"}}>{[1,2,3].map(i=><div key={i} className={`d${i}`} style={{width:6,height:6,borderRadius:"50%",background:C.accent}}/>)}<span style={{fontSize:10,color:C.muted,marginLeft:4}}>Thinking…</span></div>);
 const Spinner=()=><div className="spin" style={{width:14,height:14,border:`2px solid ${C.accent}30`,borderTop:`2px solid ${C.accent}`,borderRadius:"50%",display:"inline-block"}}/>;
 
-// ─── STATIC DATA ──────────────────────────────────────────────────
-const WATCHLIST=[
-  {ticker:"NVDA",name:"NVIDIA",    price:207.1,chg:0.97,rsi:53,ema20:176.5,ema200:141.8,spark:[195,198,202,199,203,206,204,207]},
-  {ticker:"TSLA",name:"Tesla",     price:248.3,chg:2.4, rsi:58,ema20:240.1,ema200:220.3,spark:[230,235,240,238,244,246,245,248]},
-  {ticker:"AAPL",name:"Apple",     price:313.2,chg:0.4, rsi:51,ema20:308.4,ema200:270.1,spark:[308,310,309,311,312,313,311,313]},
-  {ticker:"META",name:"Meta",      price:612.4,chg:-1.2,rsi:67,ema20:595.0,ema200:520.4,spark:[600,605,610,608,615,614,613,612]},
-  {ticker:"GOOGL",name:"Alphabet", price:175.8,chg:1.1, rsi:54,ema20:170.5,ema200:155.2,spark:[168,170,172,171,174,175,174,176]},
-  {ticker:"AMD",name:"AMD",        price:162.3,chg:-2.1,rsi:42,ema20:168.4,ema200:148.7,spark:[170,168,165,167,163,162,164,162]},
-  {ticker:"MSFT",name:"Microsoft", price:452.5,chg:0.8, rsi:55,ema20:440.2,ema200:390.1,spark:[440,443,445,448,447,450,451,452]},
-  {ticker:"PLTR",name:"Palantir",  price:28.9, chg:3.2, rsi:61,ema20:26.7, ema200:21.3, spark:[24,25,26,26,27,28,28,29]},
+// ─── WATCHLIST BASE (prices fetched live from /api/prices) ──────────
+const WATCHLIST_BASE=[
+  {ticker:"NVDA",name:"NVIDIA"},  {ticker:"TSLA",name:"Tesla"},
+  {ticker:"AAPL",name:"Apple"},   {ticker:"META",name:"Meta"},
+  {ticker:"GOOGL",name:"Alphabet"},{ticker:"AMD",name:"AMD"},
+  {ticker:"MSFT",name:"Microsoft"},{ticker:"PLTR",name:"Palantir"},
 ];
 const STRATEGIES=[
   {id:"ema",name:"EMA Pullback",type:"Swing",winRate:68,rr:"1:2.5",color:C.accent,rules:"Price above 200 EMA. Pullback to 20 EMA zone. RSI 40–58. Bullish reversal candle. Stop below swing low. Target: previous high."},
@@ -82,10 +78,48 @@ export default function TradeIQ() {
   const [newH,setNewH] = useState({ticker:"",name:"",shares:"",avgCost:"",price:"",sector:"Tech"});
   const [newT,setNewT] = useState({ticker:"",side:"BUY",entry:"",stop:"",target:"",shares:"",strategy:"EMA Pullback",notes:"",date:new Date().toISOString().split("T")[0]});
   const [calcE,setCalcE]=useState(""); const [calcS,setCalcS]=useState(""); const [calcR,setCalcR]=useState("2"); const [calcRes,setCalcRes]=useState(null);
+  const [liveData,setLiveData] = useState({});
+  const [priceStatus,setPriceStatus] = useState("loading");
+  const [lastUpdated,setLastUpdated] = useState(null);
   const chatEnd = useRef(null);
 
-  useEffect(()=>{ loadAll(); },[]);
+  // ── Live price fetch ──
+  const fetchPrices = async() => {
+    setPriceStatus("loading");
+    try {
+      const res = await fetch("/api/prices");
+      const data = await res.json();
+      if(data.prices) {
+        setLiveData(data.prices);
+        setLastUpdated(new Date(data.updatedAt));
+        setPriceStatus("live");
+      } else { setPriceStatus("error"); }
+    } catch(e) { setPriceStatus("error"); }
+  };
+
+  useEffect(()=>{ loadAll(); fetchPrices(); },[]);
   useEffect(()=>{ chatEnd.current?.scrollIntoView({behavior:"smooth"}); },[msgs]);
+
+  // Auto-refresh prices every 5 minutes
+  useEffect(()=>{
+    const interval = setInterval(fetchPrices, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  },[]);
+
+  // Merge live data into watchlist
+  const WATCHLIST = WATCHLIST_BASE.map(w => {
+    const live = liveData[w.ticker];
+    return {
+      ...w,
+      price: live?.price ?? null,
+      chg: live?.chg ?? 0,
+      rsi: live?.rsi ?? 50,
+      ema20: live?.ema20 ?? null,
+      ema200: live?.ema200 ?? null,
+      spark: live?.spark ?? [],
+      volume: live?.volume ?? null,
+    };
+  }).filter(w => w.price !== null);
 
   const loadAll = async()=>{
     setSS("syncing");
@@ -132,7 +166,7 @@ export default function TradeIQ() {
 PORTFOLIO ($${f(totalVal)} / ₹${f(totalVal*84,0)}):
 ${holdings.length===0?"Empty":holdings.map(h=>{const pnl=(h.price-h.avgCost)*h.shares;return`  ${h.ticker}: ${h.shares} shares avg $${h.avgCost} now $${h.price} P&L:${ps(pnl)}$${f(Math.abs(pnl))}`;}).join("\n")}
 
-WATCHLIST: ${WATCHLIST.map(w=>`${w.ticker}($${w.price} RSI:${w.rsi})`).join(", ")}
+WATCHLIST (LIVE): ${WATCHLIST.length>0?WATCHLIST.map(w=>`${w.ticker}($${w.price} RSI:${w.rsi} EMA20:$${w.ema20??"N/A"})`).join(", "):"Loading live prices..."}
 JOURNAL: ${journal.length} trades, ${journal.filter(t=>t.closed).length} closed
 STRATEGIES: EMA Pullback (68% win 1:2.5), Breakout (55% win 1:3), DCA ETF (88% win)
 
@@ -206,7 +240,10 @@ RULES: Capital ₹5,000. Max 2% risk per trade. Always stop-loss. Min 1:2 R:R. N
           <div style={{fontSize:9,color:C.muted,marginTop:8}}>↑ Click row → AI. Update price field → saves everywhere.</div>
         </Card>
         <Card>
-          <CT>Watchlist — Signals</CT>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+            <CT style={{marginBottom:0}}>Watchlist — {priceStatus==="live"?"Live Prices":priceStatus==="loading"?"Fetching Prices..":"Cached Prices"}</CT>
+            <Btn small color={priceStatus==="loading"?C.muted:C.accent} onClick={fetchPrices}>{priceStatus==="loading"?<Spinner/>:"↻ Refresh"}</Btn>
+          </div>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}><thead><tr>{["Stock","Price","RSI","Signal",""].map(h=>(<th key={h} style={{textAlign:"left",padding:"6px 5px",fontSize:9,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:C.muted,borderBottom:`1px solid ${C.border}`}}>{h}</th>))}</tr></thead>
           <tbody>{WATCHLIST.slice(0,6).map(w=>{const sc=scanResults.find(s=>s.ticker===w.ticker);return(
             <tr key={w.ticker} className="tiq-row" style={{cursor:"pointer"}} onClick={()=>quickAsk(`Analyse ${w.ticker} at $${w.price} RSI ${w.rsi} EMA20 $${w.ema20}. EMA Pullback entry, stop, target and position size?`)}>
@@ -371,7 +408,11 @@ RULES: Capital ₹5,000. Max 2% risk per trade. Always stop-loss. Min 1:2 R:R. N
           <span style={{fontFamily:C.display,fontWeight:800,fontSize:17,background:`linear-gradient(90deg,${C.accent},${C.blue})`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>TradeIQ</span>
           <Tag c={C.green}>Free</Tag>
           <Tag c={C.accent}>AI Active</Tag>
+          <Tag c={priceStatus==="live"?C.green:priceStatus==="loading"?C.gold:C.red}>
+            {priceStatus==="live"?"● Live":priceStatus==="loading"?"● Fetching":"● Offline"}
+          </Tag>
           <span style={{fontSize:9,color:syncColor[syncStatus],marginLeft:4}}>{syncLabel[syncStatus]}</span>
+          {lastUpdated&&<span style={{fontSize:9,color:C.muted,marginLeft:4}}>Updated {lastUpdated.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}</span>}
         </div>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <div style={{textAlign:"right"}}><div style={{fontSize:8,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em"}}>Portfolio</div><div style={{fontFamily:C.display,fontWeight:700,color:C.accent,fontSize:14}}>{holdings.length===0?"₹0":`$${f(totalVal)}`}{holdings.length>0&&<span style={{fontSize:9,color:C.muted}}> / ₹{f(totalVal*84,0)}</span>}</div></div>
