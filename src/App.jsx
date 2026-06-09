@@ -124,11 +124,22 @@ function MarketHeader({marketTab,setMarketTab,priceStatus,fetchPrices,lastUpdate
   </div>);
 }
 
+// ─── LOCAL BACKUP — keeps data even if Supabase is offline ───────
+const LS = {
+  load(key, fallback) {
+    try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }
+    catch { return fallback; }
+  },
+  save(key, val) {
+    try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
+  },
+};
+
 // ─── MAIN APP ─────────────────────────────────────────────────────
 export default function TradeIQ() {
   const [tab,setTab]           = useState("dash");
-  const [holdings,setHoldings] = useState([]);
-  const [journal,setJournal]   = useState([]);
+  const [holdings,setHoldings] = useState(()=>LS.load("tradeiq_holdings_backup",[]));
+  const [journal,setJournal]   = useState(()=>LS.load("tradeiq_journal_backup",[]));
   const [syncStatus,setSS]     = useState("idle");
   const [msgs,setMsgs]         = useState([{role:"assistant",content:"👋 Welcome to TradeIQ!\n\nYour data syncs across all devices automatically.\n\n📌 Getting started:\n1. Add your Vested holdings in Dashboard\n2. Ask the AI anything in the AI Advisor tab\n3. Log your trades in the Journal\n\nEverything saves instantly — phone, laptop, any browser. 🚀"}]);
   const [chatInput,setChatInput]   = useState("");
@@ -153,7 +164,8 @@ export default function TradeIQ() {
   const fetchPrices = async() => {
     setPriceStatus("loading");
     try {
-      const res = await fetch("/api/prices");
+      const extra = [...customUS, ...customIndia].join(",");
+      const res = await fetch(`/api/prices${extra ? `?extra=${encodeURIComponent(extra)}` : ""}`);
       const data = await res.json();
       if(data.prices) {
         setLiveData(data.prices);
@@ -171,6 +183,10 @@ export default function TradeIQ() {
     const interval = setInterval(fetchPrices, 5 * 60 * 1000);
     return () => clearInterval(interval);
   },[]);
+
+  // Mirror holdings/journal to localStorage so data survives a Supabase outage
+  useEffect(()=>{ LS.save("tradeiq_holdings_backup", holdings); },[holdings]);
+  useEffect(()=>{ LS.save("tradeiq_journal_backup", journal); },[journal]);
 
   const mergeList=(base)=>base.map(w=>{const live=liveData[w.ticker];return{...w,price:live?.price??null,chg:live?.chg??0,rsi:live?.rsi??50,ema20:live?.ema20??null,ema200:live?.ema200??null,spark:live?.spark??[],currency:live?.currency??(w.ticker.endsWith(".NS")?"INR":"USD")};}).filter(w=>w.price!==null);
   const US_WATCHLIST=mergeList([...US_BASE,...customUS.map(t=>({ticker:t,name:t}))]);

@@ -9,7 +9,14 @@ export default async function handler(req, res) {
   const US_TICKERS    = ['NVDA','TSLA','AAPL','META','GOOGL','AMD','MSFT','PLTR','AMZN','NFLX','SPY','QQQ'];
   const INDIA_TICKERS = ['RELIANCE.NS','TCS.NS','HDFCBANK.NS','INFY.NS','ICICIBANK.NS','HINDUNILVR.NS','SBIN.NS','BAJFINANCE.NS','WIPRO.NS','AXISBANK.NS','TATAMOTORS.NS','ADANIENT.NS'];
 
-  const ALL = [...US_TICKERS, ...INDIA_TICKERS];
+  // User custom tickers (e.g. ?extra=COIN,WIPRO.NS) appended to the base set.
+  // Validated against a strict pattern so we never forward junk to Yahoo.
+  const extra = String(req.query.extra || '')
+    .split(',')
+    .map(s => s.trim().toUpperCase())
+    .filter(s => /^[A-Z0-9.\-]{1,20}$/.test(s));
+
+  const ALL = [...new Set([...US_TICKERS, ...INDIA_TICKERS, ...extra])];
 
   // ── Indicator helpers ───────────────────────────────────────────
   function ema(values, period) {
