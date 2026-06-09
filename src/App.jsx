@@ -3,10 +3,28 @@ import ChartView from "./ChartView.jsx";
 import { createClient } from "@supabase/supabase-js";
 
 // ─── SUPABASE — public anon key is safe in frontend ───────────────
-const db = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-);
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+// If env vars are missing (e.g. not configured on Vercel), fall back to a
+// no-op client so the UI still renders instead of crashing at module load
+// with "supabaseUrl is required". Every query resolves to {data:null,error}.
+function makeOfflineDb() {
+  const result = { data: null, error: { message: "Supabase not configured" } };
+  const chain = new Proxy(() => {}, {
+    get: (_t, prop) => (prop === "then" ? (resolve) => resolve(result) : () => chain),
+    apply: () => chain,
+  });
+  return { from: () => chain };
+}
+
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  console.warn("[TradeIQ] Supabase env vars missing — running without cloud sync. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Vercel → Settings → Environment Variables.");
+}
+
+const db = (SUPABASE_URL && SUPABASE_ANON_KEY)
+  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : makeOfflineDb();
 
 // ─── THEME ────────────────────────────────────────────────────────
 const C = {
@@ -77,8 +95,8 @@ const STRATEGIES=[
 
 // ─── MARKET HEADER ───────────────────────────────────────────────
 function MarketHeader({marketTab,setMarketTab,priceStatus,fetchPrices,lastUpdated}){
-  const [,setT]=React.useState(0);
-  React.useEffect(()=>{const iv=setInterval(()=>setT(p=>p+1),1000);return()=>clearInterval(iv);},[]);
+  const [,setT]=useState(0);
+  useEffect(()=>{const iv=setInterval(()=>setT(p=>p+1),1000);return()=>clearInterval(iv);},[]);
   const C2={accent:"#00e5ff",blue:"#2979ff",gold:"#ffab40",green:"#69f0ae",red:"#ff5252",text:"#dde8f5",muted:"#3d5a73",s1:"#0b1119",s2:"#0f1824",border:"#1c2d3d",display:"'Syne',sans-serif",mono:"'JetBrains Mono',monospace"};
   const fmt=(tz)=>new Date().toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:true,timeZone:tz});
   const fmtD=(tz)=>new Date().toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric",timeZone:tz});
@@ -500,7 +518,7 @@ RULES: Capital ₹5,000. Max 2% risk per trade. Always stop-loss. Min 1:2 R:R. N
         {TABS.map(t=>(<button key={t.id} className="tiq-btn" onClick={()=>setTab(t.id)} style={{padding:"10px 14px",fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",fontFamily:C.display,background:"none",border:"none",borderBottom:tab===t.id?`2px solid ${C.accent}`:"2px solid transparent",color:tab===t.id?C.accent:C.muted,whiteSpace:"nowrap"}}>{t.l}</button>))}
       </div>
       <div style={{padding:18,maxWidth:1200,margin:"0 auto"}}>
-        {tab==="dash"&&<Dashboard/>}{tab==="ai"&&<AIChat/>}{tab==="scanner"&&<Scanner/>}{tab==="chart"&&<div style={{height:"calc(100vh - 140px)",margin:-18}}><ChartView ticker={chartTicker} market={marketTab} onClose={null}/></div>}{tab==="strategies"&&<StrategiesTab/>}{tab==="journal"&&<JournalTab/>}{tab==="learn"&&<Learn/>}
+        {tab==="dash"&&Dashboard()}{tab==="ai"&&AIChat()}{tab==="scanner"&&Scanner()}{tab==="chart"&&<div style={{height:"calc(100vh - 140px)",margin:-18}}><ChartView ticker={chartTicker} market={marketTab} onClose={null}/></div>}{tab==="strategies"&&StrategiesTab()}{tab==="journal"&&JournalTab()}{tab==="learn"&&Learn()}
       </div>
     </div>
   );
