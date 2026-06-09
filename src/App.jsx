@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import ChartView from "./ChartView.jsx";
 import { createClient } from "@supabase/supabase-js";
 
 // ─── SUPABASE — public anon key is safe in frontend ───────────────
@@ -124,6 +125,7 @@ export default function TradeIQ() {
   const [customIndia,setCustomIndia]=useState([]);
   const [addTickerInput,setAddTickerInput]=useState("");
   const [showAddTicker,setShowAddTicker]=useState(false);
+  const [chartTicker,setChartTicker]=useState(null);
   const [liveData,setLiveData]=useState({});
   const [priceStatus,setPriceStatus]=useState("loading");
   const [lastUpdated,setLastUpdated]=useState(null);
@@ -231,7 +233,7 @@ RULES: Capital ₹5,000. Max 2% risk per trade. Always stop-loss. Min 1:2 R:R. N
 
   const syncLabel={idle:"",syncing:"⟳ Syncing",synced:"✓ Synced",error:"⚠ Error"};
   const syncColor={idle:C.muted,syncing:C.gold,synced:C.green,error:C.red};
-  const TABS=[{id:"dash",l:"📊 Dashboard"},{id:"ai",l:"🤖 AI Advisor"},{id:"scanner",l:"🔍 Scanner"},{id:"strategies",l:"⚡ Strategies"},{id:"journal",l:"📓 Journal"},{id:"learn",l:"📚 Learn"}];
+  const TABS=[{id:"dash",l:"📊 Dashboard"},{id:"ai",l:"🤖 AI Advisor"},{id:"scanner",l:"🔍 Scanner"},{id:"chart",l:"📈 Charts"},{id:"strategies",l:"⚡ Strategies"},{id:"journal",l:"📓 Journal"},{id:"learn",l:"📚 Learn"}];
 
   // ── DASHBOARD ──
   const Dashboard=()=>(
@@ -276,7 +278,7 @@ RULES: Capital ₹5,000. Max 2% risk per trade. Always stop-loss. Min 1:2 R:R. N
           <MarketHeader marketTab={marketTab} setMarketTab={setMarketTab} priceStatus={priceStatus} fetchPrices={fetchPrices} lastUpdated={lastUpdated}/>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}><thead><tr>{["Stock","Price","RSI","Signal",""].map(h=>(<th key={h} style={{textAlign:"left",padding:"6px 5px",fontSize:9,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:C.muted,borderBottom:`1px solid ${C.border}`}}>{h}</th>))}</tr></thead>
           <tbody>{WATCHLIST.slice(0,8).map(w=>{const sc=scanResults.find(s=>s.ticker===w.ticker);const sym=w.ticker.replace(".NS","");const curr=w.currency==="INR"?"₹":"$";const dp=w.currency==="INR"?0:2;return(
-            <tr key={w.ticker} className="tiq-row" style={{cursor:"pointer"}} onClick={()=>quickAsk(`Analyse ${w.ticker} (${w.name}) at ${curr}${w.price}. RSI ${w.rsi}. Best strategy for ${marketTab==="india"?"Indian NSE":"US"} market? Entry, stop, target, position size for ₹5,000.`)}>
+            <tr key={w.ticker} className="tiq-row" style={{cursor:"pointer"}} onClick={()=>{setChartTicker(w.ticker);setTab('chart');}}>
               <td style={{padding:"7px 5px"}}><div style={{fontFamily:C.display,fontWeight:700,fontSize:12}}>{sym}</div><div style={{fontSize:9,color:w.chg>=0?C.green:C.red}}>{ps(w.chg)}{w.chg}%</div></td>
               <td style={{padding:"7px 5px",fontWeight:600}}>{curr}{w.price?.toFixed(dp)}</td>
               <td style={{padding:"7px 5px"}}><RSIMeter value={w.rsi}/></td>
@@ -500,7 +502,7 @@ RULES: Capital ₹5,000. Max 2% risk per trade. Always stop-loss. Min 1:2 R:R. N
         {TABS.map(t=>(<button key={t.id} className="tiq-btn" onClick={()=>setTab(t.id)} style={{padding:"10px 14px",fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",fontFamily:C.display,background:"none",border:"none",borderBottom:tab===t.id?`2px solid ${C.accent}`:"2px solid transparent",color:tab===t.id?C.accent:C.muted,whiteSpace:"nowrap"}}>{t.l}</button>))}
       </div>
       <div style={{padding:18,maxWidth:1200,margin:"0 auto"}}>
-        {tab==="dash"&&<Dashboard/>}{tab==="ai"&&<AIChat/>}{tab==="scanner"&&<Scanner/>}{tab==="strategies"&&<StrategiesTab/>}{tab==="journal"&&<JournalTab/>}{tab==="learn"&&<Learn/>}
+        {tab==="dash"&&<Dashboard/>}{tab==="ai"&&<AIChat/>}{tab==="scanner"&&<Scanner/>}{tab==="chart"&&<div style={{height:"calc(100vh - 140px)",margin:-18}}><ChartView ticker={chartTicker} market={marketTab} onClose={null}/></div>}{tab==="strategies"&&<StrategiesTab/>}{tab==="journal"&&<JournalTab/>}{tab==="learn"&&<Learn/>}
       </div>
     </div>
   );
