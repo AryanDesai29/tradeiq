@@ -115,6 +115,26 @@ export const DIMENSIONS = [
   { id: "holding",  label: "Holding period", keyFn: holdingBucket },
 ];
 
+// Honest self-assessment: what fraction of closed trades actually carry the
+// inputs each analytic needs. Low coverage = an insight built on "3 trades and
+// hope". Distinct from confidence (per-bucket sample) — this is whole-engine
+// data health, and it's exactly where the gaps will be after the migration
+// ships (old trades have no sector/closed_at to backfill).
+export function dataQuality(trades = [], reviews = []) {
+  const closed = trades.filter(isClosed);
+  const n = closed.length;
+  const pctOf = (k) => (n ? Math.round((k / n) * 100) : 0);
+  const reviewed = new Set(reviews.filter((r) => r && r.trade_id && !r.error).map((r) => r.trade_id));
+  const cov = (pred) => { const k = closed.filter(pred).length; return { n: k, pct: pctOf(k) }; };
+  return {
+    closed: n,
+    reviews:  cov((t) => reviewed.has(t.id)),         // has an AI review (drives mistake costing)
+    sector:   cov((t) => !!t.sector),                 // sector expectancy
+    holding:  cov((t) => holdingDays(t) != null),     // holding-period expectancy (needs closed_at)
+    withRisk: cov((t) => rMultipleOf(t) != null),     // a usable stop → valid R (drives ALL expectancy)
+  };
+}
+
 // Full profile: per-dimension breakdowns (only dimensions that have any data),
 // plus confident edges (+R) and leaks (−R) across every dimension meeting
 // MIN_SAMPLE. This is the answer to "what makes / loses money".

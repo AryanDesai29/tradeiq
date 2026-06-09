@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { expectancyBy, holdingDays, holdingBucket, marketOf, personalAlpha, mistakeCost, confidenceOf, MIN_SAMPLE } from "../src/alpha.js";
+import { expectancyBy, holdingDays, holdingBucket, marketOf, personalAlpha, mistakeCost, confidenceOf, dataQuality, MIN_SAMPLE } from "../src/alpha.js";
 
 // Build a closed trade with a known R. risk = |entry-stop|*shares; pnl = (exit-entry)*shares*dir.
 // To get a clean +nR winner: entry=100, stop=90 (risk 10/sh), exit=100+10n.
@@ -86,6 +86,32 @@ test("personalAlpha never reads review scores (regime excluded by construction)"
   const a1 = personalAlpha(Array.from({ length: MIN_SAMPLE }, () => winR(1)));
   const a2 = personalAlpha(Array.from({ length: MIN_SAMPLE }, () => winR(1, { regime_score: 5 })));
   assert.equal(a1.bestEdge.expectancyR, a2.bestEdge.expectancyR);
+});
+
+test("dataQuality reports coverage of each analytic's required input over closed trades", () => {
+  const trades = [
+    mk({ id: "t1", sector: "Technology", closedAt: "2026-06-03T00:00:00Z" }),   // R + sector + holding
+    mk({ id: "t2", sector: null, closedAt: null }),                              // R only, no sector/holding
+    mk({ id: "t3", sector: "Energy", closedAt: "2026-06-02T00:00:00Z", stop: 100 }), // stop==entry → no R
+    mk({ id: "t4", closed: false }),                                             // open → excluded entirely
+  ];
+  const reviews = [
+    { trade_id: "t1", tags: ["moved_stop"] },
+    { trade_id: "t2", error: "groq failed" },   // not a real review → not counted
+  ];
+  const dq = dataQuality(trades, reviews);
+  assert.equal(dq.closed, 3);                    // t4 (open) excluded
+  assert.equal(dq.withRisk.n, 2);                // t1, t2 have valid R; t3 doesn't
+  assert.equal(dq.withRisk.pct, 67);             // 2/3
+  assert.equal(dq.reviews.n, 1);                 // only t1's real review
+  assert.equal(dq.sector.n, 2);                  // t1, t3
+  assert.equal(dq.holding.n, 2);                 // t1, t3 have closedAt
+});
+
+test("dataQuality is safe on an empty journal", () => {
+  const dq = dataQuality([], []);
+  assert.equal(dq.closed, 0);
+  assert.equal(dq.sector.pct, 0);                // no divide-by-zero
 });
 
 test("confidenceOf tiers scale with R-valued sample size", () => {

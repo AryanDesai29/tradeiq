@@ -1,4 +1,4 @@
-import { personalAlpha, mistakeCost, confidenceOf } from "./alpha.js";
+import { personalAlpha, mistakeCost, confidenceOf, dataQuality } from "./alpha.js";
 
 // ─── PERSONAL ALPHA (P2.5) — "what conditions make / lose you money" ──────────
 // Pure presentation over src/alpha.js. Edges (+R) are green, leaks (−R) red;
@@ -18,6 +18,28 @@ export default function PersonalAlpha({ journal = [], reviews = [], theme }) {
   const topMistake = costed.find((m) => m.avgR != null && m.avgR < 0 && m.withRisk >= 3) || null;
   const tierColor = { high: C.green, medium: C.gold, low: C.muted, none: C.dim };
 
+  // Data-quality strip — coverage of the inputs each analytic relies on, so an
+  // insight's trustworthiness is visible, not assumed. Shown in every state.
+  const dq = dataQuality(journal, reviews);
+  const covColor = (p) => (p >= 70 ? C.green : p >= 40 ? C.gold : C.red);
+  const Coverage = () => (
+    <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
+      <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: C.muted, marginBottom: 8 }}>Data Quality <span style={{ color: C.dim }}>· {dq.closed} closed trades</span></div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 8 }}>
+        {[["Stop set (valid R)", dq.withRisk], ["Reviewed", dq.reviews], ["Sector", dq.sector], ["Holding period", dq.holding]].map(([label, c]) => (
+          <div key={label} style={{ background: C.s2, border: `1px solid ${C.border}`, borderRadius: 6, padding: "8px 10px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 5 }}>
+              <span style={{ fontSize: 10, color: C.text }}>{label}</span>
+              <span style={{ fontFamily: C.display, fontWeight: 700, fontSize: 12, color: covColor(c.pct) }}>{c.pct}%</span>
+            </div>
+            <div style={{ height: 4, background: C.border, borderRadius: 2, overflow: "hidden" }}><div style={{ height: "100%", width: `${c.pct}%`, background: covColor(c.pct) }} /></div>
+            <div style={{ fontSize: 8, color: C.muted, marginTop: 3 }}>{c.n}/{dq.closed} trades</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
   // Need at least one confident bucket to say anything honest about edge.
   if (a.confidentBuckets === 0) {
     return (
@@ -27,6 +49,7 @@ export default function PersonalAlpha({ journal = [], reviews = [], theme }) {
           Learning what makes you money. Once any condition — strategy, sector, market, hold time — reaches <b style={{ color: C.text }}>{a.minSample}</b> closed trades with a stop, its expectancy appears here.
           {a.closed > 0 && <> So far <b style={{ color: C.accent }}>{a.closed}</b> closed; keep logging with a stop set.</>}
         </div>
+        {a.closed > 0 && <Coverage />}
       </div>
     );
   }
@@ -121,6 +144,7 @@ export default function PersonalAlpha({ journal = [], reviews = [], theme }) {
       <div style={{ fontSize: 9, color: C.dim, marginTop: 4, lineHeight: 1.5 }}>
         Expectancy uses only closed trades with a stop (valid R), grouped by objective fills. Dimmed rows haven't hit {a.minSample} trades yet. Holding-period covers trades closed since the feature shipped. Regime is intentionally excluded until a real regime engine exists.
       </div>
+      <Coverage />
     </div>
   );
 }
