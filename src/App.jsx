@@ -273,11 +273,52 @@ RULES: Capital ₹5,000. Max 2% risk per trade. Always stop-loss. Min 1:2 R:R. N
         {aiLoading&&(<div style={{display:"flex",gap:10,alignItems:"flex-start"}}><div style={{width:27,height:27,borderRadius:6,background:C.accent+"18",border:`1px solid ${C.accent}30`,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:C.display,fontWeight:700,fontSize:11,color:C.accent}}>AI</div><div style={{background:C.s2,border:`1px solid ${C.border}`,borderRadius:"12px 12px 12px 4px",padding:"12px 14px"}}><Dots/></div></div>)}
         <div ref={chatEnd}/>
       </div>
-      <div style={{display:"flex",gap:8,borderTop:`1px solid ${C.border}`,paddingTop:10}}>
-        <input id="tiq-in" className="tiq-input" style={{flex:1,background:C.s2,border:`1px solid ${C.border}`,borderRadius:6,padding:"9px 13px",color:C.text,fontFamily:C.mono,fontSize:12}} placeholder="Ask anything about your trades, strategies, or markets…" value={chatInput} onChange={e=>setChatInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&!e.shiftKey&&sendMsg()}/>
-        <Btn solid color={C.accent} onClick={sendMsg} style={{opacity:aiLoading?0.5:1}}>{aiLoading?"…":"Send ↵"}</Btn>
+      <div style={{borderTop:`1px solid ${C.border}`,paddingTop:10}}>
+        <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
+          <textarea
+            id="tiq-in"
+            placeholder="Ask anything… (Enter to send, Shift+Enter for new line)"
+            value={chatInput}
+            onChange={e=>{
+              setChatInput(e.target.value);
+              e.target.style.height="auto";
+              e.target.style.height=Math.min(e.target.scrollHeight,160)+"px";
+            }}
+            onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMsg();}}}
+            autoComplete="off"
+            spellCheck={false}
+            rows={1}
+            style={{
+              flex:1,background:C.s2,border:`1px solid ${C.border}`,
+              borderRadius:6,padding:"10px 13px",color:C.text,
+              fontFamily:C.mono,fontSize:13,lineHeight:1.6,
+              resize:"none",outline:"none",minHeight:44,maxHeight:160,
+              overflowY:"auto",boxSizing:"border-box",display:"block",
+              width:"100%",transition:"border-color 0.15s",
+            }}
+            onFocus={e=>{e.target.style.borderColor=C.accent+"80";}}
+            onBlur={e=>{e.target.style.borderColor=C.border;}}
+          />
+          <button
+            onClick={sendMsg}
+            disabled={aiLoading||!chatInput.trim()}
+            style={{
+              flexShrink:0,height:44,padding:"0 18px",
+              background:aiLoading||!chatInput.trim()?C.muted+"30":C.accent,
+              border:"none",borderRadius:6,
+              color:aiLoading||!chatInput.trim()?C.muted:C.bg,
+              fontFamily:C.display,fontWeight:800,fontSize:12,
+              letterSpacing:"0.06em",textTransform:"uppercase",
+              cursor:aiLoading||!chatInput.trim()?"not-allowed":"pointer",
+              transition:"all 0.15s",
+            }}
+          >{aiLoading?<Spinner/>:"Send"}</button>
+        </div>
+        <div style={{fontSize:9,color:C.muted,marginTop:5,display:"flex",justifyContent:"space-between"}}>
+          <span>↵ Enter to send &nbsp;·&nbsp; Shift+↵ new line</span>
+          <span>Llama 3.3 70B · Not financial advice</span>
+        </div>
       </div>
-      <div style={{fontSize:9,color:C.muted,marginTop:5}}>Groq free tier · Not financial advice · Always verify before trading</div>
     </div>
   );
 
