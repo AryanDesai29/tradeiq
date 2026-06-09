@@ -129,8 +129,6 @@ export default function TradeIQ() {
   const [liveData,setLiveData]=useState({});
   const [priceStatus,setPriceStatus]=useState("loading");
   const [lastUpdated,setLastUpdated]=useState(null);
-  const [priceStatus,setPriceStatus] = useState("loading");
-  const [lastUpdated,setLastUpdated] = useState(null);
   const chatEnd = useRef(null);
 
   // ── Live price fetch ──
