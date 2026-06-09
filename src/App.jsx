@@ -3,8 +3,10 @@ import ChartView from "./ChartView.jsx";
 import Login from "./Login.jsx";
 import TickerSearch from "./TickerSearch.jsx";
 import Performance from "./Performance.jsx";
+import TradeReview from "./TradeReview.jsx";
 import { symbolFor, decimalsFor, shortName, withCurrency, inferCurrency } from "./stock.js";
-import { performance, byCurrency, byStrategy } from "./analytics.js";
+import { performance, byCurrency, byStrategy, rMultipleOf, pnlOf } from "./analytics.js";
+import { normalizeReview } from "./reviews.js";
 import { createClient } from "@supabase/supabase-js";
 // Currency/exchange logic lives ONLY in ./stock.js (client) and ./api/_market.js
 // (server). Components read stock.currency — they never parse tickers.
@@ -154,6 +156,11 @@ function TradeIQ({ session }) {
   const [msgs,setMsgs]         = useState([{role:"assistant",content:"👋 Welcome to TradeIQ!\n\nYour data syncs across all devices automatically.\n\n📌 Getting started:\n1. Add your Vested holdings in Dashboard\n2. Ask the AI anything in the AI Advisor tab\n3. Log your trades in the Journal\n\nEverything saves instantly — phone, laptop, any browser. 🚀"}]);
   const [chatInput,setChatInput]   = useState("");
   const [aiLoading,setAiLoading]   = useState(false);
+  // Trade reviews keyed by trade_id; seeded from localStorage so they survive a
+  // Supabase outage (or a not-yet-created tradeiq_reviews table). `reviewing`
+  // holds the trade_id currently being graded by the AI.
+  const [reviews,setReviews]       = useState(()=>LS.load(`tradeiq_reviews_backup_${userId}`,{}));
+  const [reviewing,setReviewing]   = useState(null);
   const [showAddH,setShowAddH]     = useState(false);
   const [showAddT,setShowAddT]     = useState(false);
   // `meta` holds the chosen search result {symbol,name,exchange,currency}. A
@@ -211,6 +218,7 @@ function TradeIQ({ session }) {
   // Mirror holdings/journal to localStorage so data survives a Supabase outage
   useEffect(()=>{ LS.save(`tradeiq_holdings_backup_${userId}`, holdings); },[holdings,userId]);
   useEffect(()=>{ LS.save(`tradeiq_journal_backup_${userId}`, journal); },[journal,userId]);
+  useEffect(()=>{ LS.save(`tradeiq_reviews_backup_${userId}`, reviews); },[reviews,userId]);
 
   // Custom tickers come FIRST (so a freshly added stock is always visible at
   // the top, even within the dashboard's 8-row slice) and stay visible even
@@ -250,6 +258,12 @@ function TradeIQ({ session }) {
       if(j) setJournal(j.map(r=>withCurrency({id:r.id,ticker:r.ticker,name:r.name,exchange:r.exchange,currency:r.currency,side:r.side,entry:String(r.entry_price||""),exit:r.exit_price?String(r.exit_price):null,shares:String(r.shares||""),stop:String(r.stop_loss||""),target:String(r.target||""),strategy:r.strategy,notes:r.notes,date:r.trade_date,closed:r.closed})));
       setSS("synced");
     } catch(e){ setSS("error"); }
+    // Reviews load SEPARATELY and non-blocking: the tradeiq_reviews table may not
+    // exist yet (run the migration), and a failure here must not break holdings/journal.
+    try {
+      const { data:rv } = await db.from("tradeiq_reviews").select("*");
+      if (rv && rv.length) setReviews(prev=>{ const merged={...prev}; rv.forEach(r=>{merged[r.trade_id]=r;}); return merged; });
+    } catch {}
   };
 
   const f=(n,d=2)=>Number(n).toFixed(d);
@@ -281,6 +295,27 @@ function TradeIQ({ session }) {
     setSS(error?"error":"synced");
   };
   const closeTrade=async(id,exitPrice)=>{const ep=parseFloat(exitPrice);if(isNaN(ep))return;setSS("syncing");await db.from("tradeiq_journal").update({exit_price:ep,closed:true}).eq("id",id);setJournal(p=>p.map(t=>t.id===id?{...t,exit:String(ep),closed:true}:t));setSS("synced");};
+
+  // Generate a structured AI review for a closed trade, persist it (Supabase with
+  // localStorage fallback), and attach it by trade_id. The highest-value learning
+  // moment in the system → a permanent artifact, not a throwaway summary.
+  const reviewTrade=async(t)=>{
+    if(!t||reviewing)return; setReviewing(t.id);
+    try{
+      const realizedR=rMultipleOf(t);
+      const payload={ticker:t.ticker,name:t.name,currency:t.currency,side:t.side,entry:+t.entry||null,exit:+t.exit||null,stop:+t.stop||null,target:+t.target||null,shares:+t.shares||null,strategy:t.strategy,thesis:t.notes||"(none logged)",date:t.date,realizedR:realizedR==null?null:+realizedR.toFixed(2),pnl:+pnlOf(t).toFixed(2)};
+      let token=null; if(SUPABASE_READY){try{const {data}=await db.auth.getSession();token=data.session?.access_token??null;}catch{}}
+      const res=await fetch("/api/review",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:`Bearer ${token}`}:{})},body:JSON.stringify({trade:payload,context:`Capital ₹5,000, max 2% risk/trade, min 1:2 R:R. Market view: ${marketTab==="us"?"US (NYSE/NASDAQ)":"India NSE"}.`})});
+      const data=await res.json();
+      if(data.error)throw new Error(data.error);
+      const norm=normalizeReview(data.review, realizedR);
+      const row={trade_id:t.id,user_id:userId,thesis_score:norm.thesis_score,execution_score:norm.execution_score,risk_score:norm.risk_score,regime_score:norm.regime_score,outcome_score:norm.outcome_score,overall_grade:norm.overall_grade,verdict:norm.verdict,review_text:norm.review_text,strengths:norm.strengths,mistakes:norm.mistakes,lessons:norm.lessons,tags:norm.tags};
+      let stored=row;
+      try{ const {data:saved,error}=await db.from("tradeiq_reviews").upsert(row,{onConflict:"trade_id"}).select().single(); if(!error&&saved)stored=saved; }catch{}
+      setReviews(p=>({...p,[t.id]:stored}));
+    }catch(e){ setReviews(p=>({...p,[t.id]:{error:e.message}})); }
+    setReviewing(null);
+  };
   const deleteTrade=async(id)=>{setSS("syncing");await db.from("tradeiq_journal").delete().eq("id",id);setJournal(p=>p.filter(t=>t.id!==id));setSS("synced");};
 
   // ── AI — calls /api/chat (Groq key stays secret on Vercel) ──
@@ -587,12 +622,17 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
           <div><span style={{fontFamily:C.display,fontWeight:800,fontSize:15,marginRight:8}}>{t.ticker}</span><Tag c={t.side==="BUY"?C.green:C.red}>{t.side}</Tag><Tag c={C.purple}>{t.strategy}</Tag><Tag c={t.currency==="INR"?C.gold:C.blue}>{t.currency==="INR"?"₹ INR":"$ USD"}</Tag>{isOpen&&<Tag c={C.accent}>OPEN</Tag>}</div>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
             {!isOpen&&pnl!==null&&<span style={{fontFamily:C.display,fontWeight:700,color:pc(pnl),fontSize:14}}>{ps(pnl)}{sym}{f(Math.abs(pnl))} ({ps(pp)}{f(pp)}%)</span>}
-            {isOpen&&<Btn small color={C.gold} onClick={()=>{const ep=prompt(`Exit price (${sym}):`);if(ep&&!isNaN(ep))closeTrade(t.id,ep);}}>Close</Btn>}
+            {isOpen&&<Btn small color={C.gold} onClick={async()=>{const ep=prompt(`Exit price (${sym}):`);if(ep&&!isNaN(ep)){await closeTrade(t.id,ep);reviewTrade({...t,exit:String(ep),closed:true});}}}>Close</Btn>}
             <Btn small color={C.red} onClick={()=>deleteTrade(t.id)}>✕</Btn>
           </div>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(100px,1fr))",gap:6,marginTop:10}}>{[["Date",t.date],["Entry",`${sym}${t.entry}`],["Stop",`${sym}${t.stop}`],["Target",`${sym}${t.target}`],["Shares",t.shares],["Exit",t.closed?`${sym}${t.exit}`:"Open"]].map(([l,v])=>(<div key={l}><div style={{fontSize:9,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:2}}>{l}</div><div style={{fontSize:11,fontWeight:600,color:C.text}}>{v||"—"}</div></div>))}</div>
         {t.notes&&<div style={{marginTop:8,fontSize:10,color:C.muted,borderTop:`1px solid ${C.border}`,paddingTop:8,lineHeight:1.5}}>{t.notes}</div>}
+        {!isOpen&&(reviewing===t.id
+          ? <div style={{marginTop:10,display:"flex",alignItems:"center",gap:8,fontSize:11,color:C.muted}}><Spinner/> Reviewing trade…</div>
+          : reviews[t.id]
+            ? <TradeReview review={reviews[t.id]} theme={C} onRegenerate={()=>reviewTrade(t)}/>
+            : <div style={{marginTop:10}}><Btn small color={C.accent} onClick={()=>reviewTrade(t)}>✨ Generate AI Review</Btn></div>)}
       </Card>);})}
   </div>);
 
@@ -631,7 +671,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
         {TABS.map(t=>(<button key={t.id} className="tiq-btn" onClick={()=>setTab(t.id)} style={{padding:"10px 14px",fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",fontFamily:C.display,background:"none",border:"none",borderBottom:tab===t.id?`2px solid ${C.accent}`:"2px solid transparent",color:tab===t.id?C.accent:C.muted,whiteSpace:"nowrap"}}>{t.l}</button>))}
       </div>
       <div style={{padding:18,maxWidth:1200,margin:"0 auto"}}>
-        {tab==="perf"&&<Performance journal={journal} theme={C}/>}{tab==="dash"&&Dashboard()}{tab==="ai"&&AIChat()}{tab==="scanner"&&Scanner()}{tab==="chart"&&<div style={{height:"calc(100vh - 140px)",margin:-18}}><ChartView ticker={chartTicker} market={marketTab} onClose={null}/></div>}{tab==="strategies"&&StrategiesTab()}{tab==="journal"&&JournalTab()}{tab==="learn"&&Learn()}
+        {tab==="perf"&&<Performance journal={journal} reviews={Object.values(reviews)} theme={C}/>}{tab==="dash"&&Dashboard()}{tab==="ai"&&AIChat()}{tab==="scanner"&&Scanner()}{tab==="chart"&&<div style={{height:"calc(100vh - 140px)",margin:-18}}><ChartView ticker={chartTicker} market={marketTab} onClose={null}/></div>}{tab==="strategies"&&StrategiesTab()}{tab==="journal"&&JournalTab()}{tab==="learn"&&Learn()}
       </div>
     </div>
   );

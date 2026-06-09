@@ -1,14 +1,16 @@
 import { performance, byCurrency, monthlyReturns } from "./analytics.js";
+import { recurringMistakes } from "./reviews.js";
 
 // ─── PERFORMANCE DASHBOARD (Priority 1) ──────────────────────────────────────
 // Risk-normalised (R-multiple) headline metrics that are valid across ₹ and $,
 // plus per-currency money blocks and monthly returns. Pure presentation over
 // ./analytics.js — no currency logic lives here.
-export default function Performance({ journal = [], theme }) {
+export default function Performance({ journal = [], reviews = [], theme }) {
   const C = theme;
   const p = performance(journal);
   const cur = byCurrency(journal);
   const monthly = monthlyReturns(journal);
+  const mistakes = recurringMistakes(reviews); // from AI trade reviews (P2) → Personal Alpha seed
 
   const pct = (v) => `${(v * 100).toFixed(0)}%`;
   const r1 = (v) => `${v >= 0 ? "+" : ""}${v.toFixed(2)}R`;
@@ -90,6 +92,22 @@ export default function Performance({ journal = [], theme }) {
           </div>
         ))}
       </div>
+
+      {/* Recurring mistakes from AI trade reviews — the Personal Alpha seed */}
+      {mistakes.length > 0 && (
+        <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 8, padding: 16, marginBottom: 14 }}>
+          <div style={{ fontFamily: C.display, fontWeight: 700, fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", color: C.muted, marginBottom: 10 }}>Recurring Mistakes <span style={{ color: C.dim }}>· from {reviews.length} reviewed trade{reviews.length !== 1 ? "s" : ""}</span></div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {mistakes.slice(0, 8).map((m) => (
+              <div key={m.tag} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ flex: 1, fontSize: 11, color: C.text }}>{m.label}</div>
+                <div style={{ height: 5, width: `${Math.min(100, m.count * 18)}px`, minWidth: 14, background: C.red, borderRadius: 3 }} />
+                <div style={{ fontFamily: C.display, fontWeight: 700, fontSize: 12, color: C.red, width: 24, textAlign: "right" }}>{m.count}×</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Monthly returns per currency */}
       <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 8, padding: 16 }}>
