@@ -30,8 +30,15 @@ tags: choose ZERO OR MORE ONLY from this exact list (omit if none apply): ${TAGS
 
 lessons: concrete and specific to THIS trade.
 
+THESIS EVALUATION (judge the PREDICTION, separate from P&L — this is the most important part):
+The trade carries a thesis: what the MARKET expected, what the trader believed REALITY was, a bear case, and an invalidation trigger. Using the outcome and any context, judge whether reality diverged from market expectations as the thesis predicted — NOT whether the trade made money.
+- thesis_verdict ∈ ["correct","partial","incorrect"]: did the thesis (reality vs market expectation) play out? A losing trade can still be "correct" (right idea, wrong timing/risk); a winning trade can be "incorrect" (right outcome, wrong reason — luck). Be honest and skeptical; you are inferring reality, so when genuinely unsure prefer "partial".
+- expectations_changed (bool): did reality actually diverge from the market's prior expectation (i.e. was the market wrong)?
+- bear_case_realized (bool): did the stated bear case happen?
+- thesis_reason: one sentence (≤200 chars) justifying the verdict.
+
 Respond with ONLY a JSON object, no prose, in exactly this shape:
-{"thesis_score":int,"execution_score":int,"risk_score":int,"regime_score":int,"outcome_score":int,"verdict":string,"review_text":"2-4 sentence honest assessment","strengths":["..."],"mistakes":["..."],"lessons":{"continue":["..."],"improve":["..."],"avoid":["..."]},"tags":["..."]}`;
+{"thesis_score":int,"execution_score":int,"risk_score":int,"regime_score":int,"outcome_score":int,"verdict":string,"review_text":"2-4 sentence honest assessment","strengths":["..."],"mistakes":["..."],"lessons":{"continue":["..."],"improve":["..."],"avoid":["..."]},"tags":["..."],"thesis_verdict":"correct|partial|incorrect","expectations_changed":bool,"bear_case_realized":bool,"thesis_reason":"..."}`;
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });

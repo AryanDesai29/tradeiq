@@ -4,6 +4,24 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { processScore, gradeFromScore, verdictOf, normalizeReview, recurringMistakes, TAG_KEYS } from '../src/reviews.js';
 
+test('normalizeReview validates thesis verdict fields (P2.75)', () => {
+  const ok = normalizeReview({
+    thesis_score: 70, execution_score: 70, risk_score: 70, regime_score: 70, outcome_score: 30,
+    thesis_verdict: 'partial', expectations_changed: true, bear_case_realized: false,
+    thesis_reason: 'Reality moved part-way toward the thesis but timing was early.',
+  }, -0.5);
+  assert.equal(ok.ai_thesis_verdict, 'partial');
+  assert.equal(ok.expectations_changed, true);
+  assert.equal(ok.bear_case_realized, false);
+  assert.ok(ok.thesis_reason.length > 0);
+
+  // Garbage verdict → null; non-boolean flags → null (never invented).
+  const bad = normalizeReview({ thesis_verdict: 'maybe', expectations_changed: 'yes' }, 0);
+  assert.equal(bad.ai_thesis_verdict, null);
+  assert.equal(bad.expectations_changed, null);
+  assert.equal(bad.bear_case_realized, null);
+});
+
 test('processScore excludes outcome', () => {
   // outcome_score is intentionally ignored by processScore.
   const r = { thesis_score: 80, execution_score: 80, risk_score: 80, regime_score: 80, outcome_score: 0 };
