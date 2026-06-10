@@ -1,15 +1,16 @@
 // Minimal Google sign-in gate for a private 1-2 user tool.
 const C = {
-  bg: "#06090f", s1: "#0b1119", border: "#1c2d3d", accent: "#00e5ff",
-  blue: "#2979ff", text: "#dde8f5", muted: "#3d5a73",
+  bg: "#0a101e", s1: "#0e1628", border: "#26354f", accent: "#f0b441",
+  blue: "#5b9bff", text: "#e9f0fc", muted: "#8298b8",
   display: "'Syne',sans-serif", mono: "'JetBrains Mono',monospace",
+  serif: "'Fraunces',serif",
 };
 
 export default function Login({ onSignIn }) {
   return (
-    <div style={{ minHeight: "100vh", background: C.bg, color: C.text, fontFamily: C.mono, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-      <div style={{ width: "100%", maxWidth: 380, border: `1px solid ${C.border}`, borderRadius: 12, padding: 32, background: C.s1, textAlign: "center" }}>
-        <div style={{ fontFamily: C.display, fontWeight: 800, fontSize: 30, background: `linear-gradient(90deg,${C.accent},${C.blue})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", marginBottom: 6 }}>TradeIQ</div>
+    <div style={{ minHeight: "100vh", background: `radial-gradient(900px 460px at 50% -10%, #16203a 0%, transparent 60%), ${C.bg}`, color: C.text, fontFamily: C.mono, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <div style={{ width: "100%", maxWidth: 380, border: `1px solid ${C.border}`, borderRadius: 14, padding: 32, background: C.s1, textAlign: "center", boxShadow: "inset 0 1px 0 #ffffff09, 0 24px 60px #00000066" }}>
+        <div style={{ fontFamily: C.serif, fontWeight: 900, fontSize: 32, background: `linear-gradient(95deg,${C.accent},#ffd98a)`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", marginBottom: 6 }}>TradeIQ</div>
         <div style={{ fontSize: 12, color: C.muted, marginBottom: 28, lineHeight: 1.6 }}>
           Private AI trading workspace.<br />Sign in to access your portfolio, journal &amp; AI advisor.
         </div>

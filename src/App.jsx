@@ -41,45 +41,58 @@ const db = SUPABASE_READY
   ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
   : makeOfflineDb();
 
-// ─── THEME ────────────────────────────────────────────────────────
+// ─── THEME — "Modern Dark Cinema": deep slate (never pure black), gold-trust
+// primary unified with the Council's institutional identity, jewel-tone
+// semantics, Fraunces serif for brand moments. muted lifted from ~2.4:1 to
+// ~6:1 contrast (WCAG AA) — it carries most secondary text in the app.
 const C = {
-  bg:"#06090f",s1:"#0b1119",s2:"#0f1824",s3:"#142030",
-  border:"#1c2d3d",accent:"#00e5ff",blue:"#2979ff",
-  gold:"#ffab40",green:"#69f0ae",red:"#ff5252",purple:"#ce93d8",
-  text:"#dde8f5",muted:"#3d5a73",dim:"#1e3347",
+  bg:"#0a101e",s1:"#0e1628",s2:"#131d33",s3:"#1a2742",
+  border:"#26354f",accent:"#f0b441",blue:"#5b9bff",
+  gold:"#fb923c",green:"#3fe0a0",red:"#ff6b61",purple:"#c4a5f5",
+  text:"#e9f0fc",muted:"#8298b8",dim:"#455a7d",
   mono:"'JetBrains Mono','Courier New',monospace",
   display:"'Syne',sans-serif",
+  serif:"'Fraunces',serif",
 };
 
 const GS = `
-  @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600;700&family=Fraunces:opsz,wght@9..144,600;9..144,900&display=swap');
   *{box-sizing:border-box;margin:0;padding:0;}
-  ::-webkit-scrollbar{width:4px;height:4px;}
-  ::-webkit-scrollbar-track{background:${C.s1};}
-  ::-webkit-scrollbar-thumb{background:${C.border};border-radius:2px;}
-  body{background:${C.bg};}
-  .tiq-input:focus{border-color:${C.accent}60!important;outline:none;}
-  .tiq-btn{transition:all 0.15s ease;cursor:pointer;}
-  .tiq-btn:hover{opacity:0.82;transform:translateY(-1px);}
+  ::-webkit-scrollbar{width:6px;height:6px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+  ::-webkit-scrollbar-thumb{background:${C.border};border-radius:3px;}
+  ::-webkit-scrollbar-thumb:hover{background:${C.dim};}
+  body{background:radial-gradient(1100px 500px at 50% -10%, #16203a 0%, transparent 60%), ${C.bg};}
+  ::selection{background:${C.accent}33;}
+  :focus-visible{outline:2px solid ${C.accent};outline-offset:2px;border-radius:4px;}
+  .tiq-input:focus{border-color:${C.accent}70!important;outline:none;box-shadow:0 0 0 3px ${C.accent}1c;}
+  .tiq-btn{transition:transform 0.18s cubic-bezier(0.16,1,0.3,1),opacity 0.18s ease,box-shadow 0.18s ease;cursor:pointer;}
+  .tiq-btn:hover{opacity:0.88;transform:translateY(-1px);}
+  .tiq-btn:active{transform:scale(0.97);}
+  .tiq-row{transition:background 0.15s ease;}
   .tiq-row:hover{background:${C.s3}!important;}
-  .tiq-card:hover{border-color:${C.accent}22!important;}
+  .tiq-card{transition:border-color 0.18s ease,transform 0.18s cubic-bezier(0.16,1,0.3,1),box-shadow 0.18s ease;}
+  .tiq-card:hover{border-color:${C.accent}30!important;transform:translateY(-1px);box-shadow:0 10px 28px #00000055;}
   .qbtn:hover{background:${C.accent}22!important;}
   @keyframes pulse{0%,100%{opacity:0.3;transform:scale(0.8)}50%{opacity:1;transform:scale(1)}}
   @keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
   @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
-  .msg-in{animation:fadeUp 0.2s ease;}
+  .msg-in{animation:fadeUp 0.22s cubic-bezier(0.16,1,0.3,1);}
   .d1{animation:pulse 1.1s 0s infinite}.d2{animation:pulse 1.1s 0.18s infinite}.d3{animation:pulse 1.1s 0.36s infinite}
   .spin{animation:spin 1s linear infinite}
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{animation-duration:0.01ms!important;animation-iteration-count:1!important;transition-duration:0.01ms!important;}
+  }
 `;
 
 // ─── REUSABLE COMPONENTS ─────────────────────────────────────────
-const Tag=({c,children})=>(<span style={{display:"inline-block",fontSize:9,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",padding:"2px 7px",borderRadius:3,background:c+"18",color:c,border:`1px solid ${c}28`,marginRight:4,whiteSpace:"nowrap"}}>{children}</span>);
-const Card=({children,style={},glow})=>(<div className="tiq-card" style={{background:C.s1,border:`1px solid ${glow?C.accent+"35":C.border}`,borderRadius:8,padding:16,marginBottom:14,...style}}>{children}</div>);
-const CT=({children})=>(<div style={{fontFamily:C.display,fontWeight:700,fontSize:10,letterSpacing:"0.14em",textTransform:"uppercase",color:C.muted,marginBottom:12}}>{children}</div>);
-const Btn=({children,onClick,color=C.accent,solid,small,style={}})=>(<button className="tiq-btn" onClick={onClick} style={{background:solid?color:color+"18",border:solid?"none":`1px solid ${color}35`,borderRadius:5,color:solid?C.bg:color,fontFamily:C.display,fontWeight:700,fontSize:small?9:11,letterSpacing:"0.08em",textTransform:"uppercase",padding:small?"4px 9px":"8px 16px",whiteSpace:"nowrap",...style}}>{children}</button>);
-const Inp=({label,value,onChange,placeholder,type="text",style={}})=>(<div>{label&&<div style={{fontSize:9,color:C.muted,marginBottom:3,textTransform:"uppercase",letterSpacing:"0.1em"}}>{label}</div>}<input className="tiq-input" type={type} value={value} onChange={onChange} placeholder={placeholder} style={{background:C.s2,border:`1px solid ${C.border}`,borderRadius:5,padding:"7px 11px",color:C.text,fontFamily:C.mono,fontSize:11,width:"100%",...style}}/></div>);
-const Sel=({label,value,onChange,options})=>(<div>{label&&<div style={{fontSize:9,color:C.muted,marginBottom:3,textTransform:"uppercase",letterSpacing:"0.1em"}}>{label}</div>}<select className="tiq-input" value={value} onChange={onChange} style={{background:C.s2,border:`1px solid ${C.border}`,borderRadius:5,padding:"7px 11px",color:C.text,fontFamily:C.mono,fontSize:11,width:"100%"}}>{options.map(o=><option key={o}>{o}</option>)}</select></div>);
-const StatCard=({label,value,sub,color=C.accent})=>(<div style={{background:C.s2,border:`1px solid ${C.border}`,borderLeft:`3px solid ${color}`,borderRadius:7,padding:14}}><div style={{fontSize:9,fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:C.muted,marginBottom:5}}>{label}</div><div style={{fontFamily:C.display,fontSize:20,fontWeight:800,color,lineHeight:1}}>{value}</div>{sub&&<div style={{fontSize:10,color:C.muted,marginTop:3}}>{sub}</div>}</div>);
+const Tag=({c,children})=>(<span style={{display:"inline-block",fontSize:9,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",padding:"2.5px 9px",borderRadius:999,background:c+"16",color:c,border:`1px solid ${c}30`,marginRight:4,whiteSpace:"nowrap"}}>{children}</span>);
+const Card=({children,style={},glow})=>(<div className="tiq-card" style={{background:`linear-gradient(180deg,${C.s2}66,transparent 56px),${C.s1}`,border:`1px solid ${glow?C.accent+"40":C.border}`,borderRadius:12,padding:16,marginBottom:14,boxShadow:"inset 0 1px 0 #ffffff09, 0 6px 20px #00000040",...style}}>{children}</div>);
+const CT=({children})=>(<div style={{fontFamily:C.display,fontWeight:700,fontSize:10,letterSpacing:"0.16em",textTransform:"uppercase",color:C.muted,marginBottom:12,display:"flex",alignItems:"center",gap:7}}><span style={{width:14,height:2,background:C.accent,borderRadius:1,flexShrink:0}}/>{children}</div>);
+const Btn=({children,onClick,color=C.accent,solid,small,style={}})=>(<button className="tiq-btn" onClick={onClick} style={{background:solid?`linear-gradient(135deg,${color},${color}d8)`:color+"14",border:solid?"none":`1px solid ${color}3a`,borderRadius:8,color:solid?C.bg:color,fontFamily:C.display,fontWeight:700,fontSize:small?9:11,letterSpacing:"0.08em",textTransform:"uppercase",padding:small?"5px 11px":"9px 17px",whiteSpace:"nowrap",boxShadow:solid?`0 4px 16px ${color}38`:"none",...style}}>{children}</button>);
+const Inp=({label,value,onChange,placeholder,type="text",style={}})=>(<div>{label&&<div style={{fontSize:9.5,color:C.muted,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.1em",fontWeight:600}}>{label}</div>}<input className="tiq-input" type={type} value={value} onChange={onChange} placeholder={placeholder} style={{background:C.s2,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 12px",color:C.text,fontFamily:C.mono,fontSize:12,width:"100%",transition:"border-color 0.18s ease,box-shadow 0.18s ease",...style}}/></div>);
+const Sel=({label,value,onChange,options})=>(<div>{label&&<div style={{fontSize:9.5,color:C.muted,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.1em",fontWeight:600}}>{label}</div>}<select className="tiq-input" value={value} onChange={onChange} style={{background:C.s2,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 12px",color:C.text,fontFamily:C.mono,fontSize:12,width:"100%",cursor:"pointer"}}>{options.map(o=><option key={o}>{o}</option>)}</select></div>);
+const StatCard=({label,value,sub,color=C.accent})=>(<div style={{background:`linear-gradient(180deg,${C.s3}55,transparent 48px),${C.s2}`,border:`1px solid ${C.border}`,borderLeft:`3px solid ${color}`,borderRadius:10,padding:14,boxShadow:"inset 0 1px 0 #ffffff08"}}><div style={{fontSize:9,fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:C.muted,marginBottom:6}}>{label}</div><div style={{fontFamily:C.display,fontSize:22,fontWeight:800,color,lineHeight:1,textShadow:`0 0 24px ${color}30`}}>{value}</div>{sub&&<div style={{fontSize:10,color:C.muted,marginTop:4}}>{sub}</div>}</div>);
 const Sparkline=({data=[],color=C.accent,w=80,h=28})=>{if(data.length<2)return null;const mn=Math.min(...data),mx=Math.max(...data),rng=mx-mn||1;const pts=data.map((v,i)=>`${(i/(data.length-1))*w},${h-((v-mn)/rng)*(h-4)-2}`).join(" ");const last=pts.split(" ").pop().split(",");return(<svg width={w} height={h} style={{display:"block"}}><polyline points={pts} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round"/><circle cx={last[0]} cy={last[1]} r={2.5} fill={color}/></svg>);};
 const RSIMeter=({value=50})=>{const v=Math.min(100,Math.max(0,value));const col=v<35?C.red:v>65?C.gold:C.green;return(<div style={{display:"flex",alignItems:"center",gap:6}}><div style={{width:50,height:5,background:C.dim,borderRadius:3,overflow:"hidden"}}><div style={{width:`${v}%`,height:"100%",background:col,borderRadius:3}}/></div><span style={{fontSize:10,fontWeight:700,color:col,fontFamily:C.display}}>{v}</span></div>);};
 const Dots=()=>(<div style={{display:"flex",gap:5,padding:"4px 0",alignItems:"center"}}>{[1,2,3].map(i=><div key={i} className={`d${i}`} style={{width:6,height:6,borderRadius:"50%",background:C.accent}}/>)}<span style={{fontSize:10,color:C.muted,marginLeft:4}}>Thinking…</span></div>);
@@ -112,7 +125,7 @@ const STRATEGIES=[
 function MarketHeader({marketTab,setMarketTab,priceStatus,fetchPrices,lastUpdated}){
   const [,setT]=useState(0);
   useEffect(()=>{const iv=setInterval(()=>setT(p=>p+1),1000);return()=>clearInterval(iv);},[]);
-  const C2={accent:"#00e5ff",blue:"#2979ff",gold:"#ffab40",green:"#69f0ae",red:"#ff5252",text:"#dde8f5",muted:"#3d5a73",s1:"#0b1119",s2:"#0f1824",border:"#1c2d3d",display:"'Syne',sans-serif",mono:"'JetBrains Mono',monospace"};
+  const C2={accent:"#f0b441",blue:"#5b9bff",gold:"#fb923c",green:"#3fe0a0",red:"#ff6b61",text:"#e9f0fc",muted:"#8298b8",s1:"#0e1628",s2:"#131d33",border:"#26354f",display:"'Syne',sans-serif",mono:"'JetBrains Mono',monospace"};
   const fmt=(tz)=>new Date().toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:true,timeZone:tz});
   const fmtD=(tz)=>new Date().toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric",timeZone:tz});
   const isUSOpen=()=>{const n=new Date(),ny=new Date(n.toLocaleString("en-US",{timeZone:"America/New_York"})),d=ny.getDay(),m=ny.getHours()*60+ny.getMinutes();return d>=1&&d<=5&&m>=570&&m<960;};
@@ -823,9 +836,9 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
   return(
     <div style={{background:C.bg,minHeight:"100vh",color:C.text,fontFamily:C.mono,fontSize:12}}>
       <style>{GS}</style>
-      <div style={{borderBottom:`1px solid ${C.border}`,padding:"10px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",background:C.s1,position:"sticky",top:0,zIndex:100}}>
+      <div style={{borderBottom:`1px solid ${C.border}`,padding:"10px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",background:C.s1+"d9",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",position:"sticky",top:0,zIndex:100}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <span style={{fontFamily:C.display,fontWeight:800,fontSize:17,background:`linear-gradient(90deg,${C.accent},${C.blue})`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>TradeIQ</span>
+          <span style={{fontFamily:C.serif,fontWeight:900,fontSize:19,background:`linear-gradient(95deg,${C.accent},#ffd98a)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",letterSpacing:"0.01em"}}>TradeIQ</span>
           <Tag c={C.green}>Free</Tag>
           <Tag c={C.accent}>AI Active</Tag>
           <Tag c={priceStatus==="live"?C.green:priceStatus==="loading"?C.gold:C.red}>
@@ -841,8 +854,8 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
           {SUPABASE_READY&&session&&<Btn small color={C.muted} onClick={()=>db.auth.signOut()}>Sign out</Btn>}
         </div>
       </div>
-      <div style={{display:"flex",gap:0,borderBottom:`1px solid ${C.border}`,background:C.s1,overflowX:"auto"}}>
-        {TABS.map(t=>(<button key={t.id} className="tiq-btn" onClick={()=>setTab(t.id)} style={{padding:"10px 14px",fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",fontFamily:C.display,background:"none",border:"none",borderBottom:tab===t.id?`2px solid ${C.accent}`:"2px solid transparent",color:tab===t.id?C.accent:C.muted,whiteSpace:"nowrap"}}>{t.l}</button>))}
+      <div style={{display:"flex",gap:2,borderBottom:`1px solid ${C.border}`,background:C.s1+"d9",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",overflowX:"auto",padding:"0 8px"}}>
+        {TABS.map(t=>(<button key={t.id} className="tiq-btn" onClick={()=>setTab(t.id)} aria-current={tab===t.id?"page":undefined} style={{padding:"11px 13px",fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",fontFamily:C.display,background:tab===t.id?C.accent+"12":"none",border:"none",borderRadius:"8px 8px 0 0",borderBottom:tab===t.id?`2px solid ${C.accent}`:"2px solid transparent",color:tab===t.id?C.accent:C.muted,whiteSpace:"nowrap"}}>{t.l}</button>))}
       </div>
       <div style={{padding:18,maxWidth:1200,margin:"0 auto"}}>
         {tab==="council"&&<div style={{height:"calc(100vh - 140px)",minHeight:480,margin:-18}}><Council theme={C} db={db} supabaseReady={SUPABASE_READY} userId={userId} holdings={holdings} journal={journal} reviews={Object.values(reviews)} opportunities={opportunities} watchlist={[...US_WATCHLIST,...INDIA_WATCHLIST]}/></div>}{tab==="perf"&&<Performance journal={journal} reviews={Object.values(reviews)} theme={C}/>}{tab==="opps"&&Opportunities()}{tab==="dash"&&Dashboard()}{tab==="ai"&&AIChat()}{tab==="scanner"&&Scanner()}{tab==="chart"&&<div style={{height:"calc(100vh - 140px)",margin:-18}}><ChartView ticker={chartTicker} market={marketTab} onClose={null}/></div>}{tab==="strategies"&&StrategiesTab()}{tab==="journal"&&JournalTab()}{tab==="learn"&&Learn()}

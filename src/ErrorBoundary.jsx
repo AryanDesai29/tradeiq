@@ -10,14 +10,14 @@ export default class ErrorBoundary extends React.Component {
   render() {
     if (!this.state.error) return this.props.children;
     return (
-      <div style={{ minHeight: "100vh", background: "#06090f", color: "#dde8f5", fontFamily: "'JetBrains Mono',monospace", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-        <div style={{ maxWidth: 520, border: "1px solid #1c2d3d", borderRadius: 10, padding: 24, background: "#0b1119" }}>
-          <div style={{ fontSize: 18, fontWeight: 800, color: "#ff5252", marginBottom: 10 }}>Something broke</div>
-          <div style={{ fontSize: 13, lineHeight: 1.6, color: "#3d5a73", marginBottom: 16 }}>
+      <div style={{ minHeight: "100vh", background: "#0a101e", color: "#e9f0fc", fontFamily: "'JetBrains Mono',monospace", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+        <div style={{ maxWidth: 520, border: "1px solid #26354f", borderRadius: 12, padding: 24, background: "#0e1628" }}>
+          <div style={{ fontSize: 18, fontWeight: 800, color: "#ff6b61", marginBottom: 10 }}>Something broke</div>
+          <div style={{ fontSize: 13, lineHeight: 1.6, color: "#8298b8", marginBottom: 16 }}>
             TradeIQ hit a rendering error and stopped instead of showing a blank screen. Your saved data is safe in local backup — reload to recover.
           </div>
-          <pre style={{ fontSize: 11, color: "#ffab40", background: "#0f1824", padding: 12, borderRadius: 6, overflowX: "auto", marginBottom: 16, whiteSpace: "pre-wrap" }}>{String(this.state.error?.message || this.state.error)}</pre>
-          <button onClick={() => location.reload()} style={{ background: "#00e5ff", border: "none", borderRadius: 6, color: "#06090f", fontWeight: 800, fontSize: 12, padding: "9px 18px", cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.06em" }}>Reload</button>
+          <pre style={{ fontSize: 11, color: "#fb923c", background: "#131d33", padding: 12, borderRadius: 8, overflowX: "auto", marginBottom: 16, whiteSpace: "pre-wrap" }}>{String(this.state.error?.message || this.state.error)}</pre>
+          <button onClick={() => location.reload()} style={{ background: "#f0b441", border: "none", borderRadius: 8, color: "#0a101e", fontWeight: 800, fontSize: 12, padding: "10px 18px", cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.06em" }}>Reload</button>
         </div>
       </div>
     );

@@ -31,6 +31,9 @@ const GS2 = `
   @keyframes cSlam{0%{opacity:0;transform:translate(-50%,-160%) rotate(-50deg) scale(1.6)}45%{opacity:1;transform:translate(-50%,-50%) rotate(8deg) scale(1)}55%{transform:translate(-50%,-50%) rotate(-6deg)}70%{transform:translate(-50%,-50%) rotate(3deg)}100%{opacity:0;transform:translate(-50%,-50%) rotate(0) scale(1.25)}}
   .c-seat{transition:transform 0.35s ease,opacity 0.35s ease,filter 0.35s ease;cursor:pointer;}
   .c-seat:hover{transform:translate(-50%,-50%) scale(1.1)!important;opacity:1!important;filter:none!important;z-index:7!important;}
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{animation-duration:0.01ms!important;animation-iteration-count:1!important;transition-duration:0.01ms!important;}
+  }
 `;
 
 const SEAT_POS = COUNCIL.map((_, i) => {
@@ -241,7 +244,7 @@ export default function Council({ theme: C, db, supabaseReady, userId, holdings,
           <div style={{ position: "relative", zIndex: 2, fontSize: head, lineHeight: 1.05, filter: "drop-shadow(0 4px 6px #000b)", transformOrigin: "50% 92%", animation: speaking ? "cNod 0.8s ease-in-out infinite" : "none" }}>{m.emoji}</div>
           {/* suit body with collar notch */}
           <div style={{ position: "relative", zIndex: 1, width: bodyW, height: Math.round(bodyW * 0.5), margin: "-7px auto 0", borderRadius: "48% 48% 36% 36% / 78% 78% 30% 30%", background: `linear-gradient(180deg, ${m.color}d9 0%, ${m.color}66 58%, #0a1320 100%)`, border: "3px solid #02050a", boxShadow: "inset 0 -7px 11px #0008, inset 0 4px 5px #ffffff2b" }}>
-            <div style={{ position: "absolute", left: "50%", top: -2, transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "7px solid transparent", borderRight: "7px solid transparent", borderTop: "10px solid #06090f", opacity: 0.9 }} />
+            <div style={{ position: "absolute", left: "50%", top: -2, transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "7px solid transparent", borderRight: "7px solid transparent", borderTop: "10px solid #0a101e", opacity: 0.9 }} />
           </div>
           {/* brass nameplate */}
           <div style={{ margin: "5px auto 0", width: "max-content", padding: "2px 9px", borderRadius: 6, background: "linear-gradient(180deg,#1c2a42,#0d1726)", border: "2px solid #02050a", boxShadow: `inset 0 0 0 1px ${C.gold}38, 0 3px 6px #0009` }}>
