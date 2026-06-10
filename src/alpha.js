@@ -108,6 +108,7 @@ export function mistakeCost(reviews = [], trades = []) {
 }
 
 export const DIMENSIONS = [
+  { id: "thesis",   label: "Thesis type",    keyFn: (t) => t.thesisType || null },
   { id: "strategy", label: "Strategy",       keyFn: (t) => t.strategy || null },
   { id: "sector",   label: "Sector",         keyFn: (t) => t.sector || null },
   { id: "market",   label: "Market",         keyFn: marketOf },

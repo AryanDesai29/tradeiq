@@ -37,6 +37,9 @@ export const VERDICT_LABEL = {
 
 const clamp = (n) => Math.max(0, Math.min(100, Math.round(Number(n) || 0)));
 
+// Thesis verdict vocabulary (P2.75). Kept local so reviews.js stays dependency-free.
+const THESIS_VERDICTS = ["correct", "partial", "incorrect"];
+
 // Process score deliberately EXCLUDES outcome — the whole point of the engine.
 export function processScore(r) {
   const xs = ["thesis_score", "execution_score", "risk_score", "regime_score"].map((k) => clamp(r?.[k]));
@@ -61,6 +64,9 @@ export function normalizeReview(raw, realizedR) {
   const lessons = r.lessons || {};
   const tags = Array.isArray(r.tags) ? [...new Set(r.tags)].filter((t) => TAG_KEYS.includes(t)) : [];
   const proc = processScore(scores);
+  // Thesis verdict (P2.75): graded SEPARATELY from P&L — did reality diverge from
+  // market expectations as the thesis predicted? AI proposes; user can override later.
+  const bool = (v) => (typeof v === "boolean" ? v : null);
   return {
     ...scores,
     overall_grade: gradeFromScore(proc),
@@ -70,6 +76,10 @@ export function normalizeReview(raw, realizedR) {
     mistakes: list(r.mistakes),
     lessons: { continue: list(lessons.continue), improve: list(lessons.improve), avoid: list(lessons.avoid) },
     tags,
+    ai_thesis_verdict: THESIS_VERDICTS.includes(r.thesis_verdict) ? r.thesis_verdict : null,
+    expectations_changed: bool(r.expectations_changed),
+    bear_case_realized: bool(r.bear_case_realized),
+    thesis_reason: typeof r.thesis_reason === "string" ? r.thesis_reason.slice(0, 300) : "",
   };
 }
 

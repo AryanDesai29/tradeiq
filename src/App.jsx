@@ -7,6 +7,7 @@ import TradeReview from "./TradeReview.jsx";
 import { symbolFor, decimalsFor, shortName, withCurrency, inferCurrency } from "./stock.js";
 import { performance, byCurrency, byStrategy, rMultipleOf, pnlOf } from "./analytics.js";
 import { normalizeReview } from "./reviews.js";
+import { THESIS_TYPES, THESIS_FIELD_MAX, thesisComplete, missingThesisFields } from "./thesis.js";
 import { createClient } from "@supabase/supabase-js";
 // Currency/exchange logic lives ONLY in ./stock.js (client) and ./api/_market.js
 // (server). Components read stock.currency — they never parse tickers.
@@ -167,7 +168,7 @@ function TradeIQ({ session }) {
   // holding/trade can only be saved when meta.symbol matches the ticker field —
   // i.e. the user picked from autocomplete rather than free-typing.
   const [newH,setNewH] = useState({ticker:"",name:"",shares:"",avgCost:"",price:"",sector:"Tech",meta:null});
-  const [newT,setNewT] = useState({ticker:"",side:"BUY",entry:"",stop:"",target:"",shares:"",strategy:"EMA Pullback",notes:"",date:new Date().toISOString().split("T")[0],meta:null});
+  const [newT,setNewT] = useState({ticker:"",side:"BUY",entry:"",stop:"",target:"",shares:"",strategy:"EMA Pullback",notes:"",date:new Date().toISOString().split("T")[0],meta:null,thesisType:"",expectations:"",reality:"",evidence:"",bearCase:"",invalidation:"",confidence:60});
   const [calcE,setCalcE]=useState(""); const [calcS,setCalcS]=useState(""); const [calcR,setCalcR]=useState("2"); const [calcRes,setCalcRes]=useState(null);
   const [marketTab,setMarketTab]=useState("us");
   const [customUS,setCustomUS]=useState([]);
@@ -255,7 +256,7 @@ function TradeIQ({ session }) {
       // withCurrency backfills currency for any legacy row created before the
       // currency column existed — the one place inference is allowed.
       if(h) setHoldings(h.map(r=>withCurrency({id:r.id,ticker:r.ticker,name:r.name,exchange:r.exchange,currency:r.currency,shares:+r.shares,avgCost:+r.avg_cost,price:+r.price,sector:r.sector})));
-      if(j) setJournal(j.map(r=>withCurrency({id:r.id,ticker:r.ticker,name:r.name,exchange:r.exchange,currency:r.currency,sector:r.sector,industry:r.industry,side:r.side,entry:String(r.entry_price||""),exit:r.exit_price?String(r.exit_price):null,shares:String(r.shares||""),stop:String(r.stop_loss||""),target:String(r.target||""),strategy:r.strategy,notes:r.notes,date:r.trade_date,closed:r.closed,closedAt:r.closed_at})));
+      if(j) setJournal(j.map(r=>withCurrency({id:r.id,ticker:r.ticker,name:r.name,exchange:r.exchange,currency:r.currency,sector:r.sector,industry:r.industry,side:r.side,entry:String(r.entry_price||""),exit:r.exit_price?String(r.exit_price):null,shares:String(r.shares||""),stop:String(r.stop_loss||""),target:String(r.target||""),strategy:r.strategy,notes:r.notes,date:r.trade_date,closed:r.closed,closedAt:r.closed_at,thesisType:r.thesis_type,expectations:r.thesis_expectations,reality:r.thesis_reality,evidence:r.thesis_evidence,bearCase:r.thesis_bear_case,invalidation:r.thesis_invalidation,thesisConfidence:r.thesis_confidence})));
       setSS("synced");
     } catch(e){ setSS("error"); }
     // Reviews load SEPARATELY and non-blocking: the tradeiq_reviews table may not
@@ -271,7 +272,7 @@ function TradeIQ({ session }) {
   const ps=v=>v>=0?"+":"";
   // A ticker is "valid" only if it came from a selected search result.
   const hValid=!!(newH.meta&&newH.meta.symbol===newH.ticker&&newH.avgCost);
-  const tValid=!!(newT.meta&&newT.meta.symbol===newT.ticker&&newT.entry);
+  const tValid=!!(newT.meta&&newT.meta.symbol===newT.ticker&&newT.entry&&thesisComplete(newT));
   const totalVal  = holdings.reduce((s,h)=>s+h.shares*h.price,0);
   const totalCost = holdings.reduce((s,h)=>s+h.shares*h.avgCost,0);
   const totalPnL  = totalVal-totalCost;
@@ -290,8 +291,8 @@ function TradeIQ({ session }) {
   const addTrade=async()=>{
     if(!tValid)return;setSS("syncing"); // tValid ⇒ ticker came from a selected search result
     const m=newT.meta;
-    const {data,error}=await db.from("tradeiq_journal").insert({user_id:userId,ticker:m.symbol,name:m.name,exchange:m.exchange,currency:m.currency,sector:m.sector||null,industry:m.industry||null,side:newT.side,entry_price:+newT.entry||null,shares:+newT.shares||null,stop_loss:+newT.stop||null,target:+newT.target||null,strategy:newT.strategy,notes:newT.notes,trade_date:newT.date,closed:false}).select().single();
-    if(!error&&data){setJournal(p=>[{id:data.id,ticker:data.ticker,name:data.name,exchange:data.exchange,currency:data.currency,sector:data.sector,industry:data.industry,side:data.side,entry:String(data.entry_price||""),exit:null,shares:String(data.shares||""),stop:String(data.stop_loss||""),target:String(data.target||""),strategy:data.strategy,notes:data.notes,date:data.trade_date,closed:false,closedAt:null},...p]);setNewT({ticker:"",side:"BUY",entry:"",stop:"",target:"",shares:"",strategy:"EMA Pullback",notes:"",date:new Date().toISOString().split("T")[0],meta:null});setShowAddT(false);}
+    const {data,error}=await db.from("tradeiq_journal").insert({user_id:userId,ticker:m.symbol,name:m.name,exchange:m.exchange,currency:m.currency,sector:m.sector||null,industry:m.industry||null,side:newT.side,entry_price:+newT.entry||null,shares:+newT.shares||null,stop_loss:+newT.stop||null,target:+newT.target||null,strategy:newT.strategy,notes:newT.notes,trade_date:newT.date,closed:false,thesis_type:newT.thesisType,thesis_expectations:newT.expectations.trim(),thesis_reality:newT.reality.trim(),thesis_evidence:newT.evidence.trim()||null,thesis_bear_case:newT.bearCase.trim(),thesis_invalidation:newT.invalidation.trim(),thesis_confidence:+newT.confidence}).select().single();
+    if(!error&&data){setJournal(p=>[{id:data.id,ticker:data.ticker,name:data.name,exchange:data.exchange,currency:data.currency,sector:data.sector,industry:data.industry,side:data.side,entry:String(data.entry_price||""),exit:null,shares:String(data.shares||""),stop:String(data.stop_loss||""),target:String(data.target||""),strategy:data.strategy,notes:data.notes,date:data.trade_date,closed:false,closedAt:null,thesisType:data.thesis_type,expectations:data.thesis_expectations,reality:data.thesis_reality,evidence:data.thesis_evidence,bearCase:data.thesis_bear_case,invalidation:data.thesis_invalidation,thesisConfidence:data.thesis_confidence},...p]);setNewT({ticker:"",side:"BUY",entry:"",stop:"",target:"",shares:"",strategy:"EMA Pullback",notes:"",date:new Date().toISOString().split("T")[0],meta:null,thesisType:"",expectations:"",reality:"",evidence:"",bearCase:"",invalidation:"",confidence:60});setShowAddT(false);}
     setSS(error?"error":"synced");
   };
   const closeTrade=async(id,exitPrice)=>{const ep=parseFloat(exitPrice);if(isNaN(ep))return;setSS("syncing");const closedAt=new Date().toISOString();await db.from("tradeiq_journal").update({exit_price:ep,closed:true,closed_at:closedAt}).eq("id",id);setJournal(p=>p.map(t=>t.id===id?{...t,exit:String(ep),closed:true,closedAt}:t));setSS("synced");};
@@ -303,18 +304,23 @@ function TradeIQ({ session }) {
     if(!t||reviewing)return; setReviewing(t.id);
     try{
       const realizedR=rMultipleOf(t);
-      const payload={ticker:t.ticker,name:t.name,currency:t.currency,sector:t.sector||null,side:t.side,entry:+t.entry||null,exit:+t.exit||null,stop:+t.stop||null,target:+t.target||null,shares:+t.shares||null,strategy:t.strategy,thesis:t.notes||"(none logged)",date:t.date,realizedR:realizedR==null?null:+realizedR.toFixed(2),pnl:+pnlOf(t).toFixed(2)};
+      const payload={ticker:t.ticker,name:t.name,currency:t.currency,sector:t.sector||null,side:t.side,entry:+t.entry||null,exit:+t.exit||null,stop:+t.stop||null,target:+t.target||null,shares:+t.shares||null,strategy:t.strategy,thesis_type:t.thesisType||null,market_expectations:t.expectations||null,reality:t.reality||null,evidence:t.evidence||null,bear_case:t.bearCase||null,invalidation:t.invalidation||null,confidence:t.thesisConfidence??null,notes:t.notes||"(none logged)",date:t.date,realizedR:realizedR==null?null:+realizedR.toFixed(2),pnl:+pnlOf(t).toFixed(2)};
       let token=null; if(SUPABASE_READY){try{const {data}=await db.auth.getSession();token=data.session?.access_token??null;}catch{}}
       const res=await fetch("/api/review",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:`Bearer ${token}`}:{})},body:JSON.stringify({trade:payload,context:`Capital ₹5,000, max 2% risk/trade, min 1:2 R:R. Market view: ${marketTab==="us"?"US (NYSE/NASDAQ)":"India NSE"}.`})});
       const data=await res.json();
       if(data.error)throw new Error(data.error);
       const norm=normalizeReview(data.review, realizedR);
-      const row={trade_id:t.id,user_id:userId,thesis_score:norm.thesis_score,execution_score:norm.execution_score,risk_score:norm.risk_score,regime_score:norm.regime_score,outcome_score:norm.outcome_score,overall_grade:norm.overall_grade,verdict:norm.verdict,review_text:norm.review_text,strengths:norm.strengths,mistakes:norm.mistakes,lessons:norm.lessons,tags:norm.tags};
+      const row={trade_id:t.id,user_id:userId,thesis_score:norm.thesis_score,execution_score:norm.execution_score,risk_score:norm.risk_score,regime_score:norm.regime_score,outcome_score:norm.outcome_score,overall_grade:norm.overall_grade,verdict:norm.verdict,review_text:norm.review_text,strengths:norm.strengths,mistakes:norm.mistakes,lessons:norm.lessons,tags:norm.tags,ai_thesis_verdict:norm.ai_thesis_verdict,user_thesis_verdict:null,expectations_changed:norm.expectations_changed,bear_case_realized:norm.bear_case_realized,thesis_reason:norm.thesis_reason};
       let stored=row;
       try{ const {data:saved,error}=await db.from("tradeiq_reviews").upsert(row,{onConflict:"trade_id"}).select().single(); if(!error&&saved)stored=saved; }catch{}
       setReviews(p=>({...p,[t.id]:stored}));
     }catch(e){ setReviews(p=>({...p,[t.id]:{error:e.message}})); }
     setReviewing(null);
+  };
+  // User confirms or overrides the AI's thesis verdict (P2.75). final = user > AI.
+  const setThesisVerdict=async(tradeId,verdict)=>{
+    setReviews(p=>{const cur=p[tradeId];if(!cur||cur.error)return p;return {...p,[tradeId]:{...cur,user_thesis_verdict:verdict}};});
+    try{ await db.from("tradeiq_reviews").update({user_thesis_verdict:verdict}).eq("trade_id",tradeId); }catch{}
   };
   const deleteTrade=async(id)=>{setSS("syncing");await db.from("tradeiq_journal").delete().eq("id",id);setJournal(p=>p.filter(t=>t.id!==id));setSS("synced");};
 
@@ -604,6 +610,36 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
       <div style={{marginBottom:10}}><div style={{fontSize:9,color:C.muted,marginBottom:3,textTransform:"uppercase",letterSpacing:"0.1em"}}>Notes / Reason</div>
         <textarea className="tiq-input" style={{background:C.s2,border:`1px solid ${C.border}`,borderRadius:5,padding:"8px 11px",color:C.text,fontFamily:C.mono,fontSize:11,width:"100%",height:55,resize:"vertical"}} placeholder="Why am I taking this trade?" value={newT.notes} onChange={e=>setNewT(p=>({...p,notes:e.target.value}))}/>
       </div>
+      {/* THESIS (P2.75) — required. Litman: explicit market-expectation vs reality is the edge. */}
+      <div style={{marginBottom:10,background:C.s2,border:`1px solid ${C.border}`,borderRadius:6,padding:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:6}}>
+          <div style={{fontSize:10,fontWeight:700,color:C.accent,textTransform:"uppercase",letterSpacing:"0.1em"}}>Thesis · required</div>
+          <div style={{fontSize:9,color:C.muted}}>Edge = reality diverging from what the market expects</div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10,marginBottom:8}}>
+          <div>
+            <div style={{fontSize:9,color:C.muted,marginBottom:3,textTransform:"uppercase",letterSpacing:"0.1em"}}>Thesis Type</div>
+            <select className="tiq-input" value={newT.thesisType} onChange={e=>setNewT(p=>({...p,thesisType:e.target.value}))} style={{background:C.s1,border:`1px solid ${newT.thesisType?C.border:C.gold+"66"}`,borderRadius:5,padding:"8px 10px",color:newT.thesisType?C.text:C.muted,fontFamily:C.mono,fontSize:11,width:"100%"}}>
+              <option value="">Select type…</option>
+              {THESIS_TYPES.map(tt=><option key={tt} value={tt} style={{color:"#000"}}>{tt}</option>)}
+            </select>
+          </div>
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:C.muted,marginBottom:3,textTransform:"uppercase",letterSpacing:"0.1em"}}><span>Confidence</span><span style={{color:C.accent,fontWeight:700}}>{newT.confidence}%</span></div>
+            <input type="range" min="0" max="100" value={newT.confidence} onChange={e=>setNewT(p=>({...p,confidence:+e.target.value}))} style={{width:"100%",accentColor:C.accent,marginTop:10}}/>
+          </div>
+        </div>
+        {[["expectations","Market Expects","e.g. AI demand is slowing"],["reality","Reality — your view","e.g. Cloud capex still accelerating"],["bearCase","Bear Case — why you might be wrong","e.g. Enterprise AI spend pauses"],["invalidation","Invalidation — what kills the thesis","e.g. NVDA guides below consensus"]].map(([k,label,ph])=>(
+          <div key={k} style={{marginBottom:8}}>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:C.muted,marginBottom:3,textTransform:"uppercase",letterSpacing:"0.1em"}}><span>{label}</span><span style={{color:C.dim}}>{(newT[k]||"").length}/{THESIS_FIELD_MAX}</span></div>
+            <textarea className="tiq-input" maxLength={THESIS_FIELD_MAX} value={newT[k]} onChange={e=>setNewT(p=>({...p,[k]:e.target.value}))} placeholder={ph} style={{background:C.s1,border:`1px solid ${newT[k]&&newT[k].trim()?C.border:C.gold+"44"}`,borderRadius:5,padding:"7px 10px",color:C.text,fontFamily:C.mono,fontSize:11,width:"100%",height:36,resize:"vertical"}}/>
+          </div>
+        ))}
+        <div>
+          <div style={{fontSize:9,color:C.muted,marginBottom:3,textTransform:"uppercase",letterSpacing:"0.1em"}}>Evidence <span style={{color:C.dim}}>· optional, encouraged</span></div>
+          <textarea className="tiq-input" value={newT.evidence} onChange={e=>setNewT(p=>({...p,evidence:e.target.value}))} placeholder="TSMC guidance, cloud capex, supplier commentary…" style={{background:C.s1,border:`1px solid ${C.border}`,borderRadius:5,padding:"7px 10px",color:C.text,fontFamily:C.mono,fontSize:11,width:"100%",height:34,resize:"vertical"}}/>
+        </div>
+      </div>
       {newT.entry&&newT.stop&&+newT.entry>+newT.stop&&(()=>{const tCur=newT.meta?.currency;const tSym=symbolFor(tCur);const cap=tCur==="INR"?5000:(totalVal||59);const rps=+newT.entry-+newT.stop;return(<div style={{background:C.s2,border:`1px solid ${C.border}`,borderRadius:6,padding:12,marginBottom:10}}>
         <div style={{fontSize:9,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:8}}>Trade Math · capital {tSym}{f(cap,0)}</div>
         <div style={{display:"flex",gap:18,flexWrap:"wrap"}}>{[["Risk/share",`${tSym}${f(rps)}`,C.red],["Max loss",`${tSym}${f(cap*0.02)}`,C.red],["Ideal shares",`${f(cap*0.02/rps,3)}`,C.accent],["R:R",newT.target?`1:${f((+newT.target-+newT.entry)/rps)}`:"-",(+newT.target-+newT.entry)/rps>=2?C.green:C.red]].map(([l,v,c])=>(<div key={l}><div style={{fontSize:9,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:2}}>{l}</div><div style={{fontFamily:C.display,fontWeight:700,color:c,fontSize:14}}>{v}</div></div>))}</div>
@@ -612,6 +648,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
         <Btn solid color={tValid?C.green:C.muted} onClick={addTrade}>{syncStatus==="syncing"?<Spinner/>:"✓ Save Trade"}</Btn>
         <Btn color={C.accent} onClick={()=>{const s=symbolFor(newT.meta?.currency);quickAsk(`Review before I trade: ${newT.ticker} ${newT.side} entry ${s}${newT.entry} stop ${s}${newT.stop} target ${s}${newT.target}. Valid setup? Risk correct for ${newT.meta?.currency==="INR"?"₹5,000":"my capital (~$60 / ₹5,000)"}?`);}}>AI Review First</Btn>
         {newT.ticker&&!newT.meta&&<span style={{fontSize:9,color:C.gold}}>↑ Pick a ticker from the dropdown</span>}
+        {newT.meta&&newT.entry&&!thesisComplete(newT)&&(()=>{const L={thesisType:"thesis type",expectations:"market expects",reality:"reality",bearCase:"bear case",invalidation:"invalidation",confidence:"confidence"};return <span style={{fontSize:9,color:C.gold}}>↑ Complete the thesis: {missingThesisFields(newT).map(k=>L[k]||k).join(", ")}</span>;})()}
         {newT.meta&&<span style={{fontSize:9,color:C.muted}}>{newT.meta.name} · {newT.meta.exchange} · {newT.meta.currency}</span>}
       </div>
     </Card>)}
@@ -628,10 +665,17 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
         </div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(100px,1fr))",gap:6,marginTop:10}}>{[["Date",t.date],["Entry",`${sym}${t.entry}`],["Stop",`${sym}${t.stop}`],["Target",`${sym}${t.target}`],["Shares",t.shares],["Exit",t.closed?`${sym}${t.exit}`:"Open"]].map(([l,v])=>(<div key={l}><div style={{fontSize:9,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:2}}>{l}</div><div style={{fontSize:11,fontWeight:600,color:C.text}}>{v||"—"}</div></div>))}</div>
         {t.notes&&<div style={{marginTop:8,fontSize:10,color:C.muted,borderTop:`1px solid ${C.border}`,paddingTop:8,lineHeight:1.5}}>{t.notes}</div>}
+        {t.thesisType&&<div style={{marginTop:8,borderTop:`1px solid ${C.border}`,paddingTop:8}}>
+          <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:6,flexWrap:"wrap"}}><Tag c={C.accent}>{t.thesisType}</Tag>{Number.isFinite(+t.thesisConfidence)&&<span style={{fontSize:9,color:C.muted}}>conviction {t.thesisConfidence}%</span>}</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8}}>
+            <div><div style={{fontSize:8,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:2}}>Market expects</div><div style={{fontSize:10,color:C.text,lineHeight:1.45}}>{t.expectations||"—"}</div></div>
+            <div><div style={{fontSize:8,color:C.green,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:2}}>Reality · your view</div><div style={{fontSize:10,color:C.text,lineHeight:1.45}}>{t.reality||"—"}</div></div>
+          </div>
+        </div>}
         {!isOpen&&(reviewing===t.id
           ? <div style={{marginTop:10,display:"flex",alignItems:"center",gap:8,fontSize:11,color:C.muted}}><Spinner/> Reviewing trade…</div>
           : reviews[t.id]
-            ? <TradeReview review={reviews[t.id]} theme={C} onRegenerate={()=>reviewTrade(t)}/>
+            ? <TradeReview review={reviews[t.id]} trade={t} theme={C} onRegenerate={()=>reviewTrade(t)} onVerdict={(v)=>setThesisVerdict(t.id,v)}/>
             : <div style={{marginTop:10}}><Btn small color={C.accent} onClick={()=>reviewTrade(t)}>✨ Generate AI Review</Btn></div>)}
       </Card>);})}
   </div>);
