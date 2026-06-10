@@ -10,6 +10,7 @@ import { normalizeReview } from "./reviews.js";
 import { THESIS_TYPES, THESIS_FIELD_MAX, thesisComplete, missingThesisFields } from "./thesis.js";
 import { normalizeOpportunities, opportunityReturn } from "./opportunities.js";
 import ResearchWorkspace from "./ResearchWorkspace.jsx";
+import Council from "./Council.jsx";
 import { sectorExposure, themeExposure, concentration, correlationClusters, portfolioRiskFlags } from "./portfolio.js";
 import { createClient } from "@supabase/supabase-js";
 // Currency/exchange logic lives ONLY in ./stock.js (client) and ./api/_market.js
@@ -457,7 +458,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
 
   const syncLabel={idle:"",syncing:"⟳ Syncing",synced:"✓ Synced",error:"⚠ Error"};
   const syncColor={idle:C.muted,syncing:C.gold,synced:C.green,error:C.red};
-  const TABS=[{id:"perf",l:"🏆 Performance"},{id:"opps",l:"💡 Opportunities"},{id:"dash",l:"📊 Dashboard"},{id:"ai",l:"🤖 AI Advisor"},{id:"scanner",l:"🔍 Scanner"},{id:"chart",l:"📈 Charts"},{id:"strategies",l:"⚡ Strategies"},{id:"journal",l:"📓 Journal"},{id:"learn",l:"📚 Learn"}];
+  const TABS=[{id:"council",l:"🏛️ Council"},{id:"perf",l:"🏆 Performance"},{id:"opps",l:"💡 Opportunities"},{id:"dash",l:"📊 Dashboard"},{id:"ai",l:"🤖 AI Advisor"},{id:"scanner",l:"🔍 Scanner"},{id:"chart",l:"📈 Charts"},{id:"strategies",l:"⚡ Strategies"},{id:"journal",l:"📓 Journal"},{id:"learn",l:"📚 Learn"}];
 
   // ── DASHBOARD ──
   // ── OPPORTUNITIES TAB — proactive AI-discovered theses to critique ──
@@ -844,7 +845,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
         {TABS.map(t=>(<button key={t.id} className="tiq-btn" onClick={()=>setTab(t.id)} style={{padding:"10px 14px",fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",fontFamily:C.display,background:"none",border:"none",borderBottom:tab===t.id?`2px solid ${C.accent}`:"2px solid transparent",color:tab===t.id?C.accent:C.muted,whiteSpace:"nowrap"}}>{t.l}</button>))}
       </div>
       <div style={{padding:18,maxWidth:1200,margin:"0 auto"}}>
-        {tab==="perf"&&<Performance journal={journal} reviews={Object.values(reviews)} theme={C}/>}{tab==="opps"&&Opportunities()}{tab==="dash"&&Dashboard()}{tab==="ai"&&AIChat()}{tab==="scanner"&&Scanner()}{tab==="chart"&&<div style={{height:"calc(100vh - 140px)",margin:-18}}><ChartView ticker={chartTicker} market={marketTab} onClose={null}/></div>}{tab==="strategies"&&StrategiesTab()}{tab==="journal"&&JournalTab()}{tab==="learn"&&Learn()}
+        {tab==="council"&&<div style={{height:"calc(100vh - 140px)",minHeight:480,margin:-18}}><Council theme={C} db={db} supabaseReady={SUPABASE_READY} userId={userId} holdings={holdings} journal={journal} reviews={Object.values(reviews)} opportunities={opportunities} watchlist={[...US_WATCHLIST,...INDIA_WATCHLIST]}/></div>}{tab==="perf"&&<Performance journal={journal} reviews={Object.values(reviews)} theme={C}/>}{tab==="opps"&&Opportunities()}{tab==="dash"&&Dashboard()}{tab==="ai"&&AIChat()}{tab==="scanner"&&Scanner()}{tab==="chart"&&<div style={{height:"calc(100vh - 140px)",margin:-18}}><ChartView ticker={chartTicker} market={marketTab} onClose={null}/></div>}{tab==="strategies"&&StrategiesTab()}{tab==="journal"&&JournalTab()}{tab==="learn"&&Learn()}
       </div>
       {researchOpp&&<ResearchWorkspace opp={researchOpp} theme={C} onSave={saveResearch} onCreateTrade={(o)=>{critiqueAndLog(o);setResearchOpp(null);}} onClose={()=>setResearchOpp(null)}/>}
     </div>
