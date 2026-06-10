@@ -9,6 +9,7 @@ import { performance, byCurrency, byStrategy, rMultipleOf, pnlOf } from "./analy
 import { normalizeReview } from "./reviews.js";
 import { THESIS_TYPES, THESIS_FIELD_MAX, thesisComplete, missingThesisFields } from "./thesis.js";
 import { normalizeOpportunities, opportunityReturn } from "./opportunities.js";
+import ResearchWorkspace from "./ResearchWorkspace.jsx";
 import { createClient } from "@supabase/supabase-js";
 // Currency/exchange logic lives ONLY in ./stock.js (client) and ./api/_market.js
 // (server). Components read stock.currency — they never parse tickers.
@@ -166,6 +167,7 @@ function TradeIQ({ session }) {
   // AI-generated opportunities (Opportunity Discovery Engine), localStorage-seeded.
   const [opportunities,setOpportunities] = useState(()=>LS.load(`tradeiq_opps_backup_${userId}`,[]));
   const [generatingOpps,setGeneratingOpps] = useState(false);
+  const [researchOpp,setResearchOpp] = useState(null); // opportunity open in the Research Workspace
   const [showAddH,setShowAddH]     = useState(false);
   const [showAddT,setShowAddT]     = useState(false);
   // `meta` holds the chosen search result {symbol,name,exchange,currency}. A
@@ -364,6 +366,13 @@ function TradeIQ({ session }) {
     setOpportunities(p=>p.map(o=>o.id===id?{...o,status}:o));
     try{ if(typeof id!=="string") await db.from("tradeiq_opportunities").update({status}).eq("id",id); }catch{}
   };
+  // Persist Research Workspace edits (thesis fields + evidence log + notes) back
+  // to the opportunity row, in place — research enriches the opportunity.
+  const saveResearch=async(o)=>{
+    const patch={thesis_type:o.thesis_type,market_expectations:o.market_expectations,reality_hypothesis:o.reality_hypothesis,evidence:o.evidence,bull_case:o.bull_case,bear_case:o.bear_case,invalidation:o.invalidation,confidence:o.confidence,risk_level:o.risk_level,evidence_log:o.evidence_log||[],notes:o.notes||null};
+    setOpportunities(p=>p.map(x=>x.id===o.id?{...x,...patch}:x));
+    try{ if(typeof o.id!=="string") await db.from("tradeiq_opportunities").update(patch).eq("id",o.id); }catch{}
+  };
   // Close the loop: an opportunity → prefilled trade form (thesis already filled),
   // so "the AI builds the thesis, Aryan critiques", then logs it.
   const critiqueAndLog=(o)=>{
@@ -488,7 +497,8 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
           {o.evidence&&<div style={{fontSize:9,color:C.muted,marginBottom:4,lineHeight:1.5}}><b style={{color:C.dim}}>Check:</b> {o.evidence}</div>}
           {o.invalidation&&<div style={{fontSize:9,color:C.red,marginBottom:8,lineHeight:1.5}}><b>Invalidation:</b> {o.invalidation}</div>}
           <div style={{display:"flex",gap:8,flexWrap:"wrap",borderTop:`1px solid ${C.border}`,paddingTop:8}}>
-            <Btn small solid color={C.accent} onClick={()=>critiqueAndLog(o)}>Critique &amp; Log →</Btn>
+            <Btn small solid color={C.purple} onClick={()=>setResearchOpp(o)}>🔬 Research</Btn>
+            <Btn small color={C.accent} onClick={()=>critiqueAndLog(o)}>Critique &amp; Log →</Btn>
             {o.status!=="watching"&&<Btn small color={C.blue} onClick={()=>setOppStatus(o.id,"watching")}>Watch</Btn>}
             <Btn small color={C.muted} onClick={()=>setOppStatus(o.id,"dismissed")}>Dismiss</Btn>
           </div>
@@ -810,6 +820,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
       <div style={{padding:18,maxWidth:1200,margin:"0 auto"}}>
         {tab==="perf"&&<Performance journal={journal} reviews={Object.values(reviews)} theme={C}/>}{tab==="opps"&&Opportunities()}{tab==="dash"&&Dashboard()}{tab==="ai"&&AIChat()}{tab==="scanner"&&Scanner()}{tab==="chart"&&<div style={{height:"calc(100vh - 140px)",margin:-18}}><ChartView ticker={chartTicker} market={marketTab} onClose={null}/></div>}{tab==="strategies"&&StrategiesTab()}{tab==="journal"&&JournalTab()}{tab==="learn"&&Learn()}
       </div>
+      {researchOpp&&<ResearchWorkspace opp={researchOpp} theme={C} onSave={saveResearch} onCreateTrade={(o)=>{critiqueAndLog(o);setResearchOpp(null);}} onClose={()=>setResearchOpp(null)}/>}
     </div>
   );
 }
