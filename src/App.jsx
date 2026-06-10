@@ -10,6 +10,7 @@ import { normalizeReview } from "./reviews.js";
 import { THESIS_TYPES, THESIS_FIELD_MAX, thesisComplete, missingThesisFields } from "./thesis.js";
 import { normalizeOpportunities, opportunityReturn } from "./opportunities.js";
 import ResearchWorkspace from "./ResearchWorkspace.jsx";
+import { sectorExposure, themeExposure, concentration, correlationClusters, portfolioRiskFlags } from "./portfolio.js";
 import { createClient } from "@supabase/supabase-js";
 // Currency/exchange logic lives ONLY in ./stock.js (client) and ./api/_market.js
 // (server). Components read stock.currency — they never parse tickers.
@@ -506,6 +507,30 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
     </div>);
   };
 
+  // Portfolio in a common base (USD) so ₹ and $ positions are comparable.
+  const FX={USD:1,INR:1/84};
+  const pfItems=holdings.map(h=>({ticker:h.ticker,sector:h.sector,value:(+h.shares||0)*(+h.price||0)*(FX[h.currency]||1)}));
+  const PortfolioIntel=()=>{
+    if(holdings.length===0)return null;
+    const con=concentration(pfItems), themes=themeExposure(pfItems), sectors=sectorExposure(pfItems);
+    const clusters=correlationClusters(pfItems), flags=portfolioRiskFlags(pfItems);
+    const maxT=Math.max(...themes.map(t=>t.pct),0.01);
+    const Bars=({rows,label})=>(<div style={{flex:1,minWidth:220}}><div style={{fontSize:9,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6}}>{label}</div>{rows.slice(0,6).map(r=>(<div key={r.key} style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}><div style={{width:120,fontSize:10,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.key}{r.count>1&&<span style={{color:C.muted}}> ×{r.count}</span>}</div><div style={{flex:1,height:6,background:C.dim,borderRadius:3,overflow:"hidden"}}><div style={{width:`${(r.pct/maxT)*100}%`,height:"100%",background:r.pct>0.4?C.red:r.pct>0.25?C.gold:C.accent}}/></div><div style={{width:36,textAlign:"right",fontSize:10,fontWeight:700,color:C.text}}>{(r.pct*100).toFixed(0)}%</div></div>))}</div>);
+    return(<Card style={{marginBottom:14}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:10,flexWrap:"wrap",gap:8}}>
+        <CT>Portfolio Intelligence</CT><span style={{fontSize:10,color:C.muted}}>what you're actually exposed to · {holdings.length} positions</span>
+      </div>
+      {flags.length>0&&<div style={{display:"flex",flexDirection:"column",gap:5,marginBottom:12}}>{flags.map((fl,i)=>(<div key={i} style={{fontSize:10,color:fl.level==="high"?C.red:C.gold,background:(fl.level==="high"?C.red:C.gold)+"12",border:`1px solid ${(fl.level==="high"?C.red:C.gold)}30`,borderRadius:5,padding:"6px 10px",lineHeight:1.4}}>⚠ {fl.text}</div>))}</div>}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:10,marginBottom:14}}>
+        {[["Largest position",con.largest?`${con.largest.ticker} ${(con.top1Pct*100).toFixed(0)}%`:"—",con.top1Pct>0.25?C.red:C.text],["Top-3 concentration",`${(con.top3Pct*100).toFixed(0)}%`,con.top3Pct>0.7?C.red:C.gold],["Effective bets",con.effectiveN?con.effectiveN.toFixed(1):"—",con.effectiveN&&con.effectiveN<3?C.red:C.green]].map(([l,v,c])=>(<div key={l} style={{background:C.s2,border:`1px solid ${C.border}`,borderRadius:6,padding:10}}><div style={{fontSize:8,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:3}}>{l}</div><div style={{fontFamily:C.display,fontWeight:800,fontSize:16,color:c}}>{v}</div></div>))}
+      </div>
+      <div style={{display:"flex",gap:18,flexWrap:"wrap",marginBottom:clusters.length?12:0}}>
+        <Bars rows={themes} label="Theme exposure (correlated bets)"/>
+        <Bars rows={sectors} label="Sector exposure"/>
+      </div>
+      {clusters.length>0&&<div style={{borderTop:`1px solid ${C.border}`,paddingTop:8}}><div style={{fontSize:9,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:5}}>Correlation risk <span style={{color:C.dim}}>· theme proxy</span></div>{clusters.map(cl=>(<div key={cl.theme} style={{fontSize:10,color:C.text,marginBottom:3,lineHeight:1.4}}><b style={{color:cl.pct>0.4?C.red:C.gold}}>{cl.tickers.join(" + ")}</b> — {cl.count} names in {cl.theme} = {(cl.pct*100).toFixed(0)}%, effectively one bet</div>))}</div>}
+    </Card>);
+  };
   const Dashboard=()=>(
     <div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:10,marginBottom:14}}>
@@ -514,6 +539,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
         <StatCard label="Max Risk/Trade" value="₹100" sub="2% of ₹5,000" color={C.gold}/>
         <StatCard label="Trades Logged" value={journal.length} sub={`${journal.filter(t=>t.closed).length} closed`} color={C.purple}/>
       </div>
+      {PortfolioIntel()}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
         <Card>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
