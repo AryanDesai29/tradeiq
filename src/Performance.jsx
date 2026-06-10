@@ -1,5 +1,6 @@
 import { performance, byCurrency, monthlyReturns } from "./analytics.js";
 import { recurringMistakes } from "./reviews.js";
+import PersonalAlpha from "./Alpha.jsx";
 
 // ─── PERFORMANCE DASHBOARD (Priority 1) ──────────────────────────────────────
 // Risk-normalised (R-multiple) headline metrics that are valid across ₹ and $,
@@ -108,6 +109,11 @@ export default function Performance({ journal = [], reviews = [], theme }) {
           </div>
         </div>
       )}
+
+      {/* Personal Alpha (P2.5) — the recurring-mistakes seed above grown into a
+          full edge/leak engine: expectancy in R by strategy, sector, market,
+          side, and holding period. */}
+      <PersonalAlpha journal={journal} reviews={reviews} theme={C} />
 
       {/* Monthly returns per currency */}
       <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 8, padding: 16 }}>

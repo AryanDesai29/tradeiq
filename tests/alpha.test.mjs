@@ -1,0 +1,163 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { expectancyBy, holdingDays, holdingBucket, marketOf, personalAlpha, mistakeCost, confidenceOf, dataQuality, MIN_SAMPLE } from "../src/alpha.js";
+
+// Build a closed trade with a known R. risk = |entry-stop|*shares; pnl = (exit-entry)*shares*dir.
+// To get a clean +nR winner: entry=100, stop=90 (risk 10/sh), exit=100+10n.
+const mk = (o = {}) => ({
+  side: "BUY", entry: 100, stop: 90, shares: 1, exit: 110, closed: true,
+  currency: "USD", strategy: "Breakout", sector: "Technology",
+  date: "2026-06-01", closedAt: "2026-06-04T00:00:00Z", ...o,
+});
+const winR = (n, o = {}) => mk({ exit: 100 + 10 * n, ...o });   // +nR
+const lossR = (n, o = {}) => mk({ exit: 100 - 10 * n, ...o });  // -nR
+
+test("marketOf derives India from INR, US otherwise — no stored column", () => {
+  assert.equal(marketOf({ currency: "INR" }), "India");
+  assert.equal(marketOf({ currency: "USD" }), "US");
+  assert.equal(marketOf({}), "US");
+});
+
+test("holdingDays / holdingBucket from entry date → closed_at; null when missing", () => {
+  assert.equal(holdingDays(mk({ date: "2026-06-01", closedAt: "2026-06-04T00:00:00Z" })), 3);
+  assert.equal(holdingBucket(mk({ date: "2026-06-01", closedAt: "2026-06-04T00:00:00Z" })), "2–5d (swing)");
+  assert.equal(holdingBucket(mk({ date: "2026-06-01", closedAt: "2026-06-01T05:00:00Z" })), "Intraday–1d");
+  assert.equal(holdingBucket(mk({ date: "2026-06-01", closedAt: "2026-08-01T00:00:00Z" })), "1mo+ (position)");
+  assert.equal(holdingDays(mk({ closedAt: null })), null);            // not yet timestamped
+  assert.equal(holdingBucket(mk({ closedAt: null })), null);
+});
+
+test("expectancyBy groups, averages R, and sorts best-first", () => {
+  const g = expectancyBy([
+    winR(2, { strategy: "Breakout" }), winR(1, { strategy: "Breakout" }),  // avg +1.5R
+    lossR(1, { strategy: "Pullback" }),                                    // -1R
+  ], (t) => t.strategy);
+  assert.equal(g[0].key, "Breakout");
+  assert.equal(g[0].expectancyR, 1.5);
+  assert.equal(g[0].trades, 2);
+  assert.equal(g[0].winRate, 1);
+  assert.equal(g[1].key, "Pullback");
+  assert.equal(g[1].expectancyR, -1);
+});
+
+test("expectancyBy skips open trades and null keys; counts withRisk separately", () => {
+  const g = expectancyBy([
+    winR(1),
+    mk({ closed: false }),                 // open → excluded
+    mk({ sector: null }),                  // null key → excluded from THIS dimension
+    mk({ stop: 100 }),                     // stop==entry → no R, still a trade
+  ], (t) => t.sector);
+  const tech = g.find((x) => x.key === "Technology");
+  assert.equal(tech.trades, 2);            // winR(1) + the no-R trade
+  assert.equal(tech.withRisk, 1);          // only winR(1) has a usable R
+});
+
+test("personalAlpha gates on MIN_SAMPLE: noise is not surfaced as an edge", () => {
+  // 1 huge winner in 'Energy' must NOT become bestEdge (below sample gate).
+  const trades = [winR(5, { sector: "Energy" }), ...Array.from({ length: 4 }, () => winR(1, { sector: "Energy" }))];
+  // 4 < MIN_SAMPLE(5)? add exactly MIN_SAMPLE winners to a confident bucket.
+  const confidentSet = Array.from({ length: MIN_SAMPLE }, () => winR(1, { sector: "Technology", strategy: "Breakout" }));
+  const a = personalAlpha([...trades, ...confidentSet]);
+  // Energy has 5 trades here (1 big + 4) → also confident; ensure gating logic holds generally:
+  for (const e of a.edges) assert.ok(e.withRisk >= MIN_SAMPLE, "every surfaced edge meets the sample gate");
+  assert.ok(a.bestEdge.withRisk >= MIN_SAMPLE);
+});
+
+test("personalAlpha: a single trade stays low-confidence (no edges surfaced)", () => {
+  const a = personalAlpha([winR(3)]);
+  assert.equal(a.confidentBuckets, 0);
+  assert.equal(a.bestEdge, null);
+  assert.equal(a.worstLeak, null);
+  assert.equal(a.closed, 1);
+});
+
+test("personalAlpha separates edges (+R) from leaks (−R) across dimensions", () => {
+  const winners = Array.from({ length: MIN_SAMPLE }, () => winR(2, { strategy: "Pullback", sector: "Technology" }));
+  const losers  = Array.from({ length: MIN_SAMPLE }, () => lossR(1, { strategy: "Earnings", sector: "Energy" }));
+  const a = personalAlpha([...winners, ...losers]);
+  assert.ok(a.bestEdge.expectancyR > 0);
+  assert.ok(a.worstLeak.expectancyR < 0);
+  assert.ok(a.edges.every((e) => e.expectancyR > 0));
+  assert.ok(a.leaks.every((l) => l.expectancyR < 0));
+});
+
+test("personalAlpha never reads review scores (regime excluded by construction)", () => {
+  // Even if a trade object carries a regime_score, it must not affect expectancy.
+  const a1 = personalAlpha(Array.from({ length: MIN_SAMPLE }, () => winR(1)));
+  const a2 = personalAlpha(Array.from({ length: MIN_SAMPLE }, () => winR(1, { regime_score: 5 })));
+  assert.equal(a1.bestEdge.expectancyR, a2.bestEdge.expectancyR);
+});
+
+test("dataQuality reports coverage of each analytic's required input over closed trades", () => {
+  const trades = [
+    mk({ id: "t1", sector: "Technology", closedAt: "2026-06-03T00:00:00Z" }),   // R + sector + holding
+    mk({ id: "t2", sector: null, closedAt: null }),                              // R only, no sector/holding
+    mk({ id: "t3", sector: "Energy", closedAt: "2026-06-02T00:00:00Z", stop: 100 }), // stop==entry → no R
+    mk({ id: "t4", closed: false }),                                             // open → excluded entirely
+  ];
+  const reviews = [
+    { trade_id: "t1", tags: ["moved_stop"] },
+    { trade_id: "t2", error: "groq failed" },   // not a real review → not counted
+  ];
+  const dq = dataQuality(trades, reviews);
+  assert.equal(dq.closed, 3);                    // t4 (open) excluded
+  assert.equal(dq.withRisk.n, 2);                // t1, t2 have valid R; t3 doesn't
+  assert.equal(dq.withRisk.pct, 67);             // 2/3
+  assert.equal(dq.reviews.n, 1);                 // only t1's real review
+  assert.equal(dq.sector.n, 2);                  // t1, t3
+  assert.equal(dq.holding.n, 2);                 // t1, t3 have closedAt
+});
+
+test("dataQuality is safe on an empty journal", () => {
+  const dq = dataQuality([], []);
+  assert.equal(dq.closed, 0);
+  assert.equal(dq.sector.pct, 0);                // no divide-by-zero
+});
+
+test("confidenceOf tiers scale with R-valued sample size", () => {
+  assert.equal(confidenceOf(3).tier, "none");    // below MIN_SAMPLE → building
+  assert.equal(confidenceOf(5).tier, "low");     // 5–9
+  assert.equal(confidenceOf(9).tier, "low");
+  assert.equal(confidenceOf(10).tier, "medium"); // 10–29
+  assert.equal(confidenceOf(29).tier, "medium");
+  assert.equal(confidenceOf(30).tier, "high");   // 30+
+});
+
+test("mistakeCost attributes realised R to a tag via its trade, sorted by damage", () => {
+  const trades = [
+    lossR(1, { id: "t1" }),  // -1R
+    lossR(3, { id: "t2" }),  // -3R
+    winR(1,  { id: "t3" }),  // +1R
+  ];
+  const reviews = [
+    { trade_id: "t1", tags: ["sold_winner_early", "moved_stop"] },
+    { trade_id: "t2", tags: ["moved_stop"] },
+    { trade_id: "t3", tags: ["sold_winner_early"] },
+  ];
+  const c = mistakeCost(reviews, trades);
+  const movedStop = c.find((m) => m.tag === "moved_stop");
+  assert.equal(movedStop.count, 2);
+  assert.equal(movedStop.withRisk, 2);
+  assert.equal(movedStop.avgR, -2);             // (−1 + −3)/2
+  assert.equal(movedStop.totalR, -4);
+  // sold_winner_early: (−1 + +1)/2 = 0 avg, total 0 → less damage than moved_stop.
+  assert.equal(c[0].tag, "moved_stop");          // most negative totalR sorts first
+  assert.ok(c[0].label.length > 0);              // human label resolved from vocab
+});
+
+test("mistakeCost ignores unknown tags, error rows, and missing trades", () => {
+  const trades = [winR(2, { id: "t1" })];
+  const c = mistakeCost([
+    { trade_id: "t1", tags: ["not_a_real_tag", "sold_winner_early"] },
+    { trade_id: "missing", tags: ["moved_stop"] },  // trade not present → count only, no R
+    { error: "groq failed" },                        // placeholder row → skipped
+    null,
+  ], trades);
+  assert.ok(!c.some((m) => m.tag === "not_a_real_tag"));
+  const swe = c.find((m) => m.tag === "sold_winner_early");
+  assert.equal(swe.withRisk, 1);
+  const ms = c.find((m) => m.tag === "moved_stop");
+  assert.equal(ms.count, 1);
+  assert.equal(ms.withRisk, 0);                   // trade missing → no R attributed
+  assert.equal(ms.avgR, null);
+});

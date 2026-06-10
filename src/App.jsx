@@ -255,7 +255,7 @@ function TradeIQ({ session }) {
       // withCurrency backfills currency for any legacy row created before the
       // currency column existed — the one place inference is allowed.
       if(h) setHoldings(h.map(r=>withCurrency({id:r.id,ticker:r.ticker,name:r.name,exchange:r.exchange,currency:r.currency,shares:+r.shares,avgCost:+r.avg_cost,price:+r.price,sector:r.sector})));
-      if(j) setJournal(j.map(r=>withCurrency({id:r.id,ticker:r.ticker,name:r.name,exchange:r.exchange,currency:r.currency,side:r.side,entry:String(r.entry_price||""),exit:r.exit_price?String(r.exit_price):null,shares:String(r.shares||""),stop:String(r.stop_loss||""),target:String(r.target||""),strategy:r.strategy,notes:r.notes,date:r.trade_date,closed:r.closed})));
+      if(j) setJournal(j.map(r=>withCurrency({id:r.id,ticker:r.ticker,name:r.name,exchange:r.exchange,currency:r.currency,sector:r.sector,industry:r.industry,side:r.side,entry:String(r.entry_price||""),exit:r.exit_price?String(r.exit_price):null,shares:String(r.shares||""),stop:String(r.stop_loss||""),target:String(r.target||""),strategy:r.strategy,notes:r.notes,date:r.trade_date,closed:r.closed,closedAt:r.closed_at})));
       setSS("synced");
     } catch(e){ setSS("error"); }
     // Reviews load SEPARATELY and non-blocking: the tradeiq_reviews table may not
@@ -290,11 +290,11 @@ function TradeIQ({ session }) {
   const addTrade=async()=>{
     if(!tValid)return;setSS("syncing"); // tValid ⇒ ticker came from a selected search result
     const m=newT.meta;
-    const {data,error}=await db.from("tradeiq_journal").insert({user_id:userId,ticker:m.symbol,name:m.name,exchange:m.exchange,currency:m.currency,side:newT.side,entry_price:+newT.entry||null,shares:+newT.shares||null,stop_loss:+newT.stop||null,target:+newT.target||null,strategy:newT.strategy,notes:newT.notes,trade_date:newT.date,closed:false}).select().single();
-    if(!error&&data){setJournal(p=>[{id:data.id,ticker:data.ticker,name:data.name,exchange:data.exchange,currency:data.currency,side:data.side,entry:String(data.entry_price||""),exit:null,shares:String(data.shares||""),stop:String(data.stop_loss||""),target:String(data.target||""),strategy:data.strategy,notes:data.notes,date:data.trade_date,closed:false},...p]);setNewT({ticker:"",side:"BUY",entry:"",stop:"",target:"",shares:"",strategy:"EMA Pullback",notes:"",date:new Date().toISOString().split("T")[0],meta:null});setShowAddT(false);}
+    const {data,error}=await db.from("tradeiq_journal").insert({user_id:userId,ticker:m.symbol,name:m.name,exchange:m.exchange,currency:m.currency,sector:m.sector||null,industry:m.industry||null,side:newT.side,entry_price:+newT.entry||null,shares:+newT.shares||null,stop_loss:+newT.stop||null,target:+newT.target||null,strategy:newT.strategy,notes:newT.notes,trade_date:newT.date,closed:false}).select().single();
+    if(!error&&data){setJournal(p=>[{id:data.id,ticker:data.ticker,name:data.name,exchange:data.exchange,currency:data.currency,sector:data.sector,industry:data.industry,side:data.side,entry:String(data.entry_price||""),exit:null,shares:String(data.shares||""),stop:String(data.stop_loss||""),target:String(data.target||""),strategy:data.strategy,notes:data.notes,date:data.trade_date,closed:false,closedAt:null},...p]);setNewT({ticker:"",side:"BUY",entry:"",stop:"",target:"",shares:"",strategy:"EMA Pullback",notes:"",date:new Date().toISOString().split("T")[0],meta:null});setShowAddT(false);}
     setSS(error?"error":"synced");
   };
-  const closeTrade=async(id,exitPrice)=>{const ep=parseFloat(exitPrice);if(isNaN(ep))return;setSS("syncing");await db.from("tradeiq_journal").update({exit_price:ep,closed:true}).eq("id",id);setJournal(p=>p.map(t=>t.id===id?{...t,exit:String(ep),closed:true}:t));setSS("synced");};
+  const closeTrade=async(id,exitPrice)=>{const ep=parseFloat(exitPrice);if(isNaN(ep))return;setSS("syncing");const closedAt=new Date().toISOString();await db.from("tradeiq_journal").update({exit_price:ep,closed:true,closed_at:closedAt}).eq("id",id);setJournal(p=>p.map(t=>t.id===id?{...t,exit:String(ep),closed:true,closedAt}:t));setSS("synced");};
 
   // Generate a structured AI review for a closed trade, persist it (Supabase with
   // localStorage fallback), and attach it by trade_id. The highest-value learning
@@ -303,7 +303,7 @@ function TradeIQ({ session }) {
     if(!t||reviewing)return; setReviewing(t.id);
     try{
       const realizedR=rMultipleOf(t);
-      const payload={ticker:t.ticker,name:t.name,currency:t.currency,side:t.side,entry:+t.entry||null,exit:+t.exit||null,stop:+t.stop||null,target:+t.target||null,shares:+t.shares||null,strategy:t.strategy,thesis:t.notes||"(none logged)",date:t.date,realizedR:realizedR==null?null:+realizedR.toFixed(2),pnl:+pnlOf(t).toFixed(2)};
+      const payload={ticker:t.ticker,name:t.name,currency:t.currency,sector:t.sector||null,side:t.side,entry:+t.entry||null,exit:+t.exit||null,stop:+t.stop||null,target:+t.target||null,shares:+t.shares||null,strategy:t.strategy,thesis:t.notes||"(none logged)",date:t.date,realizedR:realizedR==null?null:+realizedR.toFixed(2),pnl:+pnlOf(t).toFixed(2)};
       let token=null; if(SUPABASE_READY){try{const {data}=await db.auth.getSession();token=data.session?.access_token??null;}catch{}}
       const res=await fetch("/api/review",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:`Bearer ${token}`}:{})},body:JSON.stringify({trade:payload,context:`Capital ₹5,000, max 2% risk/trade, min 1:2 R:R. Market view: ${marketTab==="us"?"US (NYSE/NASDAQ)":"India NSE"}.`})});
       const data=await res.json();
