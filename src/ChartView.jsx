@@ -3,10 +3,10 @@ import TickerSearch from "./TickerSearch.jsx";
 import { symbolFor, decimalsFor, shortName } from "./stock.js";
 
 const C = {
-  bg:"#06090f",s1:"#0b1119",s2:"#0f1824",s3:"#142030",
-  border:"#1c2d3d",accent:"#00e5ff",blue:"#2979ff",
-  gold:"#ffab40",green:"#69f0ae",red:"#ff5252",purple:"#ce93d8",
-  text:"#dde8f5",muted:"#3d5a73",dim:"#1e3347",
+  bg:"#0a101e",s1:"#0e1628",s2:"#131d33",s3:"#1a2742",
+  border:"#26354f",accent:"#f0b441",blue:"#5b9bff",
+  gold:"#fb923c",green:"#3fe0a0",red:"#ff6b61",purple:"#c4a5f5",
+  text:"#e9f0fc",muted:"#8298b8",dim:"#455a7d",
   mono:"'JetBrains Mono','Courier New',monospace",
   display:"'Syne',sans-serif",
 };
