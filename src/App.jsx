@@ -8,6 +8,7 @@ import { symbolFor, decimalsFor, shortName, withCurrency, inferCurrency } from "
 import { performance, byCurrency, byStrategy, rMultipleOf, pnlOf } from "./analytics.js";
 import { normalizeReview } from "./reviews.js";
 import { THESIS_TYPES, THESIS_FIELD_MAX, thesisComplete, missingThesisFields } from "./thesis.js";
+import { normalizeOpportunities, opportunityReturn } from "./opportunities.js";
 import { createClient } from "@supabase/supabase-js";
 // Currency/exchange logic lives ONLY in ./stock.js (client) and ./api/_market.js
 // (server). Components read stock.currency — they never parse tickers.
@@ -162,6 +163,9 @@ function TradeIQ({ session }) {
   // holds the trade_id currently being graded by the AI.
   const [reviews,setReviews]       = useState(()=>LS.load(`tradeiq_reviews_backup_${userId}`,{}));
   const [reviewing,setReviewing]   = useState(null);
+  // AI-generated opportunities (Opportunity Discovery Engine), localStorage-seeded.
+  const [opportunities,setOpportunities] = useState(()=>LS.load(`tradeiq_opps_backup_${userId}`,[]));
+  const [generatingOpps,setGeneratingOpps] = useState(false);
   const [showAddH,setShowAddH]     = useState(false);
   const [showAddT,setShowAddT]     = useState(false);
   // `meta` holds the chosen search result {symbol,name,exchange,currency}. A
@@ -220,6 +224,7 @@ function TradeIQ({ session }) {
   useEffect(()=>{ LS.save(`tradeiq_holdings_backup_${userId}`, holdings); },[holdings,userId]);
   useEffect(()=>{ LS.save(`tradeiq_journal_backup_${userId}`, journal); },[journal,userId]);
   useEffect(()=>{ LS.save(`tradeiq_reviews_backup_${userId}`, reviews); },[reviews,userId]);
+  useEffect(()=>{ LS.save(`tradeiq_opps_backup_${userId}`, opportunities); },[opportunities,userId]);
 
   // Custom tickers come FIRST (so a freshly added stock is always visible at
   // the top, even within the dashboard's 8-row slice) and stay visible even
@@ -264,6 +269,11 @@ function TradeIQ({ session }) {
     try {
       const { data:rv } = await db.from("tradeiq_reviews").select("*");
       if (rv && rv.length) setReviews(prev=>{ const merged={...prev}; rv.forEach(r=>{merged[r.trade_id]=r;}); return merged; });
+    } catch {}
+    // Opportunities load SEPARATELY (table may not exist yet) — most recent first.
+    try {
+      const { data:op } = await db.from("tradeiq_opportunities").select("*").order("generated_at",{ascending:false}).limit(60);
+      if (op && op.length) setOpportunities(op);
     } catch {}
   };
 
@@ -323,6 +333,43 @@ function TradeIQ({ session }) {
     try{ await db.from("tradeiq_reviews").update({user_thesis_verdict:verdict}).eq("trade_id",tradeId); }catch{}
   };
   const deleteTrade=async(id)=>{setSS("syncing");await db.from("tradeiq_journal").delete().eq("id",id);setJournal(p=>p.filter(t=>t.id!==id));setSS("synced");};
+
+  // ── OPPORTUNITY DISCOVERY ENGINE (P3) ──
+  // The AI proposes investable theses from the current watchlist snapshot; they're
+  // stored (with snapshot price) so each idea is measurable against outcome later.
+  const generateOpportunities=async()=>{
+    if(generatingOpps)return; setGeneratingOpps(true);
+    try{
+      const list=WATCHLIST.filter(w=>w.price!=null);
+      if(!list.length)throw new Error("No live watchlist prices yet — refresh prices first.");
+      const stocks=list.map(w=>({ticker:w.ticker,name:w.name,currency:w.currency,price:w.price,chg:w.chg,rsi:w.rsi,ema20:w.ema20,ema200:w.ema200}));
+      let token=null; if(SUPABASE_READY){try{const {data}=await db.auth.getSession();token=data.session?.access_token??null;}catch{}}
+      const res=await fetch("/api/opportunities",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:`Bearer ${token}`}:{})},body:JSON.stringify({stocks,market:marketTab,count:8})});
+      const data=await res.json();
+      if(data.error)throw new Error(data.error);
+      const known=new Set(list.map(w=>w.ticker));
+      const norm=normalizeOpportunities(data.opportunities,known,10);
+      if(!norm.length)throw new Error("No strong opportunities surfaced from this watchlist right now.");
+      const priceOf=t=>list.find(w=>w.ticker===t)?.price??null;
+      const nameOf=t=>list.find(w=>w.ticker===t)?.name??t;
+      const curOf=t=>list.find(w=>w.ticker===t)?.currency??null;
+      const rows=norm.map(o=>({user_id:userId,ticker:o.ticker,name:nameOf(o.ticker),currency:curOf(o.ticker),thesis_type:o.thesis_type,market_expectations:o.market_expectations,reality_hypothesis:o.reality_hypothesis,evidence:o.evidence,bull_case:o.bull_case,bear_case:o.bear_case,invalidation:o.invalidation,confidence:o.confidence,risk_level:o.risk_level,price_at_gen:priceOf(o.ticker),status:"new"}));
+      let stored=rows.map((r,i)=>({...r,id:`local_${Date.now()}_${i}`,generated_at:new Date().toISOString()}));
+      try{ const {data:saved,error}=await db.from("tradeiq_opportunities").insert(rows).select(); if(!error&&saved&&saved.length)stored=saved; }catch{}
+      setOpportunities(prev=>[...stored,...prev]);
+    }catch(e){ alert(e.message); }
+    setGeneratingOpps(false);
+  };
+  const setOppStatus=async(id,status)=>{
+    setOpportunities(p=>p.map(o=>o.id===id?{...o,status}:o));
+    try{ if(typeof id!=="string") await db.from("tradeiq_opportunities").update({status}).eq("id",id); }catch{}
+  };
+  // Close the loop: an opportunity → prefilled trade form (thesis already filled),
+  // so "the AI builds the thesis, Aryan critiques", then logs it.
+  const critiqueAndLog=(o)=>{
+    setNewT(p=>({...p,ticker:o.ticker,meta:{symbol:o.ticker,name:o.name||o.ticker,exchange:"",currency:o.currency||(marketTab==="india"?"INR":"USD"),sector:null,industry:null},side:"BUY",thesisType:o.thesis_type||"",expectations:(o.market_expectations||"").slice(0,THESIS_FIELD_MAX),reality:(o.reality_hypothesis||"").slice(0,THESIS_FIELD_MAX),evidence:o.evidence||"",bearCase:(o.bear_case||"").slice(0,THESIS_FIELD_MAX),invalidation:(o.invalidation||"").slice(0,THESIS_FIELD_MAX),confidence:o.confidence??60}));
+    setOppStatus(o.id,"logged"); setShowAddT(true); setTab("journal");
+  };
 
   // ── AI — calls /api/chat (Groq key stays secret on Vercel) ──
   const systemPrompt=useCallback(()=>{
@@ -400,9 +447,55 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
 
   const syncLabel={idle:"",syncing:"⟳ Syncing",synced:"✓ Synced",error:"⚠ Error"};
   const syncColor={idle:C.muted,syncing:C.gold,synced:C.green,error:C.red};
-  const TABS=[{id:"perf",l:"🏆 Performance"},{id:"dash",l:"📊 Dashboard"},{id:"ai",l:"🤖 AI Advisor"},{id:"scanner",l:"🔍 Scanner"},{id:"chart",l:"📈 Charts"},{id:"strategies",l:"⚡ Strategies"},{id:"journal",l:"📓 Journal"},{id:"learn",l:"📚 Learn"}];
+  const TABS=[{id:"perf",l:"🏆 Performance"},{id:"opps",l:"💡 Opportunities"},{id:"dash",l:"📊 Dashboard"},{id:"ai",l:"🤖 AI Advisor"},{id:"scanner",l:"🔍 Scanner"},{id:"chart",l:"📈 Charts"},{id:"strategies",l:"⚡ Strategies"},{id:"journal",l:"📓 Journal"},{id:"learn",l:"📚 Learn"}];
 
   // ── DASHBOARD ──
+  // ── OPPORTUNITIES TAB — proactive AI-discovered theses to critique ──
+  const Opportunities=()=>{
+    const riskCol={low:C.green,medium:C.gold,high:C.red};
+    const active=opportunities.filter(o=>o.status!=="dismissed");
+    const Field=({label,value,color})=>(<div style={{flex:1,minWidth:150}}><div style={{fontSize:8,color:color||C.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:2}}>{label}</div><div style={{fontSize:10,color:C.text,lineHeight:1.45}}>{value||"—"}</div></div>);
+    return (<div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:6,flexWrap:"wrap",gap:8}}>
+        <div><div style={{fontFamily:C.display,fontWeight:800,fontSize:17}}>Opportunities</div><div style={{fontSize:11,color:C.muted}}>The AI proposes theses from your {marketTab==="us"?"US":"India"} watchlist — you critique.</div></div>
+        <Btn solid color={generatingOpps?C.muted:C.green} onClick={generateOpportunities}>{generatingOpps?<><Spinner/> Discovering…</>:`✨ Generate from ${marketTab==="us"?"US":"India"} watchlist`}</Btn>
+      </div>
+      <div style={{fontSize:9,color:C.gold,marginBottom:12,lineHeight:1.5}}>⚠️ Hypotheses to critique, not fundamental research. The AI has no filings — each idea is grounded in technicals + general reasoning. Stress-test the bear case before acting.</div>
+      {active.length===0?(<Card style={{textAlign:"center",padding:42}}><div style={{fontSize:32,marginBottom:10}}>💡</div><div style={{fontFamily:C.display,fontWeight:700,fontSize:15,marginBottom:6}}>No opportunities yet</div><div style={{color:C.muted,fontSize:12,maxWidth:380,margin:"0 auto",lineHeight:1.6}}>Hit <b style={{color:C.green}}>Generate</b> and the AI scans your watchlist for spots where reality may be diverging from what the market expects. Each becomes a thesis you can critique and log.</div></Card>):
+      active.map(o=>{const live=liveData[o.ticker];const ret=live?opportunityReturn(o,live.price):null;const sym=symbolFor(o.currency);return(
+        <Card key={o.id} style={{borderLeft:`3px solid ${riskCol[o.risk_level]||C.gold}`,opacity:o.status==="logged"?0.78:1}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8,marginBottom:8}}>
+            <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+              <span style={{fontFamily:C.display,fontWeight:800,fontSize:15}}>{o.ticker}</span>
+              {o.thesis_type&&<Tag c={C.accent}>{o.thesis_type}</Tag>}
+              <Tag c={riskCol[o.risk_level]||C.gold}>{(o.risk_level||"med").toUpperCase()} RISK</Tag>
+              {o.status==="logged"&&<Tag c={C.green}>LOGGED</Tag>}
+              {o.status==="watching"&&<Tag c={C.blue}>WATCHING</Tag>}
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              {ret!=null&&<span style={{fontSize:10,fontWeight:700,color:ret>=0?C.green:C.red}}>{ret>=0?"+":""}{f(ret)}% since</span>}
+              <div style={{textAlign:"right"}}><div style={{fontFamily:C.display,fontWeight:800,fontSize:16,color:o.confidence>=70?C.green:o.confidence>=50?C.gold:C.muted}}>{o.confidence}%</div><div style={{fontSize:8,color:C.muted}}>confidence</div></div>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:14,flexWrap:"wrap",marginBottom:8}}>
+            <Field label="Market expects" value={o.market_expectations}/>
+            <Field label="Reality hypothesis" value={o.reality_hypothesis} color={C.green}/>
+          </div>
+          <div style={{display:"flex",gap:14,flexWrap:"wrap",marginBottom:8}}>
+            <Field label="Bull case" value={o.bull_case} color={C.green}/>
+            <Field label="Bear case" value={o.bear_case} color={C.red}/>
+          </div>
+          {o.evidence&&<div style={{fontSize:9,color:C.muted,marginBottom:4,lineHeight:1.5}}><b style={{color:C.dim}}>Check:</b> {o.evidence}</div>}
+          {o.invalidation&&<div style={{fontSize:9,color:C.red,marginBottom:8,lineHeight:1.5}}><b>Invalidation:</b> {o.invalidation}</div>}
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",borderTop:`1px solid ${C.border}`,paddingTop:8}}>
+            <Btn small solid color={C.accent} onClick={()=>critiqueAndLog(o)}>Critique &amp; Log →</Btn>
+            {o.status!=="watching"&&<Btn small color={C.blue} onClick={()=>setOppStatus(o.id,"watching")}>Watch</Btn>}
+            <Btn small color={C.muted} onClick={()=>setOppStatus(o.id,"dismissed")}>Dismiss</Btn>
+          </div>
+        </Card>);})}
+    </div>);
+  };
+
   const Dashboard=()=>(
     <div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:10,marginBottom:14}}>
@@ -715,7 +808,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
         {TABS.map(t=>(<button key={t.id} className="tiq-btn" onClick={()=>setTab(t.id)} style={{padding:"10px 14px",fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",fontFamily:C.display,background:"none",border:"none",borderBottom:tab===t.id?`2px solid ${C.accent}`:"2px solid transparent",color:tab===t.id?C.accent:C.muted,whiteSpace:"nowrap"}}>{t.l}</button>))}
       </div>
       <div style={{padding:18,maxWidth:1200,margin:"0 auto"}}>
-        {tab==="perf"&&<Performance journal={journal} reviews={Object.values(reviews)} theme={C}/>}{tab==="dash"&&Dashboard()}{tab==="ai"&&AIChat()}{tab==="scanner"&&Scanner()}{tab==="chart"&&<div style={{height:"calc(100vh - 140px)",margin:-18}}><ChartView ticker={chartTicker} market={marketTab} onClose={null}/></div>}{tab==="strategies"&&StrategiesTab()}{tab==="journal"&&JournalTab()}{tab==="learn"&&Learn()}
+        {tab==="perf"&&<Performance journal={journal} reviews={Object.values(reviews)} theme={C}/>}{tab==="opps"&&Opportunities()}{tab==="dash"&&Dashboard()}{tab==="ai"&&AIChat()}{tab==="scanner"&&Scanner()}{tab==="chart"&&<div style={{height:"calc(100vh - 140px)",margin:-18}}><ChartView ticker={chartTicker} market={marketTab} onClose={null}/></div>}{tab==="strategies"&&StrategiesTab()}{tab==="journal"&&JournalTab()}{tab==="learn"&&Learn()}
       </div>
     </div>
   );
