@@ -1,9 +1,12 @@
 import { processScore, gradeFromScore, VERDICT_LABEL, MISTAKE_TAGS } from "./reviews.js";
+import { finalVerdict, VERDICT_LABEL as THESIS_VERDICT_LABEL, THESIS_VERDICTS } from "./thesis.js";
 
-// ─── TRADE REVIEW ARTIFACT (Priority 2) ──────────────────────────────────────
-// Renders the structured, persistent review attached to a closed trade.
-export default function TradeReview({ review, theme, onRegenerate }) {
+// ─── TRADE REVIEW ARTIFACT (Priority 2 + P2.75 thesis verdict) ────────────────
+// Renders the structured, persistent review attached to a closed trade, including
+// the thesis verdict (AI grades, user can override).
+export default function TradeReview({ review, trade, theme, onRegenerate, onVerdict }) {
   const C = theme;
+  const tColor = { correct: C.green, partial: C.gold, incorrect: C.red };
   if (!review) return null;
   if (review.error) return <div style={{ fontSize: 10, color: C.red, marginTop: 8 }}>⚠️ Review failed: {review.error}</div>;
 
@@ -49,6 +52,41 @@ export default function TradeReview({ review, theme, onRegenerate }) {
           </div>
         ))}
       </div>
+
+      {/* THESIS VERDICT (P2.75) — prediction quality, judged separately from P&L */}
+      {(review.ai_thesis_verdict || review.user_thesis_verdict) && (() => {
+        const fin = finalVerdict(review);
+        const col = tColor[fin] || C.muted;
+        return (
+          <div style={{ marginBottom: 10, background: C.s1, border: `1px solid ${col}40`, borderLeft: `3px solid ${col}`, borderRadius: 6, padding: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, flexWrap: "wrap", gap: 6 }}>
+              <span style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: C.muted }}>Thesis Verdict</span>
+              <span style={{ fontFamily: C.display, fontWeight: 800, fontSize: 12, color: col }}>{THESIS_VERDICT_LABEL[fin] || "—"}</span>
+            </div>
+            {trade && (trade.expectations || trade.reality) && (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 8, marginBottom: 8 }}>
+                <div><div style={{ fontSize: 8, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 2 }}>Market expected</div><div style={{ fontSize: 10, color: C.text, lineHeight: 1.45 }}>{trade.expectations || "—"}</div></div>
+                <div><div style={{ fontSize: 8, color: C.green, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 2 }}>What happened</div><div style={{ fontSize: 10, color: C.text, lineHeight: 1.45 }}>{review.thesis_reason || trade.reality || "—"}</div></div>
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 10, fontSize: 9, marginBottom: onVerdict ? 8 : 0, flexWrap: "wrap" }}>
+              {typeof review.expectations_changed === "boolean" && <span style={{ color: review.expectations_changed ? C.green : C.muted }}>● Market {review.expectations_changed ? "was wrong" : "was right"}</span>}
+              {typeof review.bear_case_realized === "boolean" && <span style={{ color: review.bear_case_realized ? C.red : C.muted }}>● Bear case {review.bear_case_realized ? "triggered" : "avoided"}</span>}
+              <span style={{ color: C.muted, marginLeft: "auto" }}>AI: <b style={{ color: tColor[review.ai_thesis_verdict] || C.muted }}>{THESIS_VERDICT_LABEL[review.ai_thesis_verdict] || "—"}</b></span>
+            </div>
+            {onVerdict && (
+              <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+                <span style={{ fontSize: 8, color: C.muted, marginRight: 2 }}>Your call:</span>
+                {THESIS_VERDICTS.map((v) => { const active = fin === v; const vc = tColor[v]; return (
+                  <button key={v} onClick={() => onVerdict(v)} style={{ fontSize: 9, fontWeight: 700, padding: "3px 9px", borderRadius: 4, cursor: "pointer", border: `1px solid ${active ? vc : C.border}`, background: active ? vc + "22" : "transparent", color: active ? vc : C.muted }}>
+                    {v === "correct" ? "Confirm" : v === "partial" ? "Partial" : "Incorrect"}
+                  </button>
+                ); })}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {review.review_text && <div style={{ fontSize: 11, color: C.text, lineHeight: 1.6, marginBottom: 10 }}>{review.review_text}</div>}
 

@@ -1,5 +1,6 @@
 import { performance, byCurrency, monthlyReturns } from "./analytics.js";
 import { recurringMistakes } from "./reviews.js";
+import { thesisStats, thesisCalibration } from "./thesis.js";
 import PersonalAlpha from "./Alpha.jsx";
 
 // ─── PERFORMANCE DASHBOARD (Priority 1) ──────────────────────────────────────
@@ -12,6 +13,8 @@ export default function Performance({ journal = [], reviews = [], theme }) {
   const cur = byCurrency(journal);
   const monthly = monthlyReturns(journal);
   const mistakes = recurringMistakes(reviews); // from AI trade reviews (P2) → Personal Alpha seed
+  const iq = thesisStats(reviews);             // P2.75 "investor IQ" — prediction quality
+  const cal = thesisCalibration(journal, reviews);
 
   const pct = (v) => `${(v * 100).toFixed(0)}%`;
   const r1 = (v) => `${v >= 0 ? "+" : ""}${v.toFixed(2)}R`;
@@ -62,6 +65,43 @@ export default function Performance({ journal = [], reviews = [], theme }) {
         <Tile label="Max Drawdown" value={`${p.maxDrawdownR.toFixed(2)}R`} sub="peak-to-trough" color={C.red} />
         <Tile label="Avg Win / Loss" value={`${p.avgWinR.toFixed(2)} / ${p.avgLossR.toFixed(2)}R`} sub="in R-multiples" color={C.purple} />
       </div>
+
+      {/* Investor IQ (P2.75) — thesis accuracy is the TRUE score: prediction quality, not P&L */}
+      {iq.n > 0 && (() => {
+        const acc = iq.accuracy, accColor = acc >= 0.6 ? C.green : acc >= 0.45 ? C.gold : C.red;
+        return (
+          <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderLeft: `3px solid ${accColor}`, borderRadius: 8, padding: 16, marginBottom: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+              <div style={{ fontFamily: C.display, fontWeight: 800, fontSize: 14 }}>Investor IQ <span style={{ fontSize: 10, fontWeight: 400, color: C.dim }}>· thesis accuracy, not P&amp;L</span></div>
+              <div style={{ fontSize: 11, color: C.muted }}>{iq.n} thesis{iq.n !== 1 ? "es" : ""} judged</div>
+            </div>
+            <div style={{ display: "flex", gap: 20, flexWrap: "wrap", alignItems: "center" }}>
+              <div>
+                <div style={{ fontFamily: C.display, fontWeight: 800, fontSize: 34, color: accColor, lineHeight: 1 }}>{pct(acc)}</div>
+                <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>thesis accuracy</div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(96px,1fr))", gap: 10, flex: 1, minWidth: 240 }}>
+                {[
+                  ["Correct", iq.correct, C.green], ["Partial", iq.partial, C.gold], ["Wrong", iq.incorrect, C.red],
+                  ["Market wrong", `${iq.marketWrong}/${iq.marketWrong + iq.marketRight}`, C.accent],
+                  ["Bear case hit", pct(iq.bearCaseRate), C.red],
+                  ["Avg conviction", cal.n ? pct(cal.avgConfidence) : "—", C.purple],
+                ].map(([l, v, c]) => (
+                  <div key={l} style={{ background: C.s2, border: `1px solid ${C.border}`, borderRadius: 5, padding: 8 }}>
+                    <div style={{ fontSize: 8, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 2 }}>{l}</div>
+                    <div style={{ fontFamily: C.display, fontWeight: 700, fontSize: 14, color: c }}>{v}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}`, fontSize: 9, color: C.muted }}>
+              {cal.n > 0 && <span>Calibration: <b style={{ color: cal.label === "Good" ? C.green : cal.label === "Fair" ? C.gold : C.red }}>{cal.label}</b> (conviction {pct(cal.avgConfidence)} vs reality {pct(cal.actualAccuracy)})</span>}
+              <span>AI thesis accuracy: <b style={{ color: C.text }}>{pct(iq.aiAccuracy)}</b></span>
+              <span>You agree with AI: <b style={{ color: C.text }}>{pct(iq.agreementRate)}</b> · override {pct(iq.overrideRate)}</span>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Equity curve in R */}
       <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 8, padding: 16, marginBottom: 14 }}>
