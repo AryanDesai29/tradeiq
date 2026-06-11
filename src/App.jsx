@@ -80,6 +80,18 @@ const GS = `
   .msg-in{animation:fadeUp 0.22s cubic-bezier(0.16,1,0.3,1);}
   .d1{animation:pulse 1.1s 0s infinite}.d2{animation:pulse 1.1s 0.18s infinite}.d3{animation:pulse 1.1s 0.36s infinite}
   .spin{animation:spin 1s linear infinite}
+  table{font-variant-numeric:tabular-nums;}
+  tbody tr:nth-child(even){background:#ffffff04;}
+  @keyframes tabIn{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:translateY(0)}}
+  .tab-in{animation:tabIn 0.3s cubic-bezier(0.16,1,0.3,1);}
+  @keyframes shimmer{0%{background-position:-130px 0}100%{background-position:130px 0}}
+  .shim{display:inline-block;height:11px;border-radius:6px;width:62px;vertical-align:middle;background:linear-gradient(90deg,${C.s3} 25%,${C.dim}66 50%,${C.s3} 75%);background-size:260px 100%;animation:shimmer 1.3s linear infinite;}
+  @keyframes livePulse{0%,100%{box-shadow:0 0 0 0 ${C.green}66}50%{box-shadow:0 0 0 5px transparent}}
+  .live-dot{width:7px;height:7px;border-radius:50%;display:inline-block;animation:livePulse 2s ease-out infinite;}
+  .tiq-btn{position:relative;overflow:hidden;}
+  .tiq-btn::after{content:'';position:absolute;top:0;left:-70%;width:45%;height:100%;background:linear-gradient(100deg,transparent,#ffffff24,transparent);transform:skewX(-20deg);transition:left 0.5s ease;pointer-events:none;}
+  .tiq-btn:hover::after{left:130%;}
+  @media(max-width:880px){.tiq-2col{grid-template-columns:1fr!important;}}
   @media (prefers-reduced-motion: reduce){
     *,*::before,*::after{animation-duration:0.01ms!important;animation-iteration-count:1!important;transition-duration:0.01ms!important;}
   }
@@ -92,11 +104,13 @@ const CT=({children})=>(<div style={{fontFamily:C.display,fontWeight:700,fontSiz
 const Btn=({children,onClick,color=C.accent,solid,small,style={}})=>(<button className="tiq-btn" onClick={onClick} style={{background:solid?`linear-gradient(135deg,${color},${color}d8)`:color+"14",border:solid?"none":`1px solid ${color}3a`,borderRadius:8,color:solid?C.bg:color,fontFamily:C.display,fontWeight:700,fontSize:small?9:11,letterSpacing:"0.08em",textTransform:"uppercase",padding:small?"5px 11px":"9px 17px",whiteSpace:"nowrap",boxShadow:solid?`0 4px 16px ${color}38`:"none",...style}}>{children}</button>);
 const Inp=({label,value,onChange,placeholder,type="text",style={}})=>(<div>{label&&<div style={{fontSize:9.5,color:C.muted,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.1em",fontWeight:600}}>{label}</div>}<input className="tiq-input" type={type} value={value} onChange={onChange} placeholder={placeholder} style={{background:C.s2,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 12px",color:C.text,fontFamily:C.mono,fontSize:12,width:"100%",transition:"border-color 0.18s ease,box-shadow 0.18s ease",...style}}/></div>);
 const Sel=({label,value,onChange,options})=>(<div>{label&&<div style={{fontSize:9.5,color:C.muted,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.1em",fontWeight:600}}>{label}</div>}<select className="tiq-input" value={value} onChange={onChange} style={{background:C.s2,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 12px",color:C.text,fontFamily:C.mono,fontSize:12,width:"100%",cursor:"pointer"}}>{options.map(o=><option key={o}>{o}</option>)}</select></div>);
-const StatCard=({label,value,sub,color=C.accent})=>(<div style={{background:`linear-gradient(180deg,${C.s3}55,transparent 48px),${C.s2}`,border:`1px solid ${C.border}`,borderLeft:`3px solid ${color}`,borderRadius:10,padding:14,boxShadow:"inset 0 1px 0 #ffffff08"}}><div style={{fontSize:9,fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:C.muted,marginBottom:6}}>{label}</div><div style={{fontFamily:C.display,fontSize:22,fontWeight:800,color,lineHeight:1,textShadow:`0 0 24px ${color}30`}}>{value}</div>{sub&&<div style={{fontSize:10,color:C.muted,marginTop:4}}>{sub}</div>}</div>);
-const Sparkline=({data=[],color=C.accent,w=80,h=28})=>{if(data.length<2)return null;const mn=Math.min(...data),mx=Math.max(...data),rng=mx-mn||1;const pts=data.map((v,i)=>`${(i/(data.length-1))*w},${h-((v-mn)/rng)*(h-4)-2}`).join(" ");const last=pts.split(" ").pop().split(",");return(<svg width={w} height={h} style={{display:"block"}}><polyline points={pts} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round"/><circle cx={last[0]} cy={last[1]} r={2.5} fill={color}/></svg>);};
+const StatCard=({label,value,sub,color=C.accent})=>(<div className="tiq-card" style={{background:`linear-gradient(180deg,${C.s3}55,transparent 48px),${C.s2}`,border:`1px solid ${C.border}`,borderLeft:`3px solid ${color}`,borderRadius:10,padding:14,boxShadow:"inset 0 1px 0 #ffffff08"}}><div style={{fontSize:9,fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:C.muted,marginBottom:6}}>{label}</div><div style={{fontFamily:C.display,fontSize:22,fontWeight:800,color,lineHeight:1,textShadow:`0 0 24px ${color}30`}}>{value}</div>{sub&&<div style={{fontSize:10,color:C.muted,marginTop:4}}>{sub}</div>}</div>);
+const Sparkline=({data=[],color=C.accent,w=80,h=28})=>{if(data.length<2)return null;const mn=Math.min(...data),mx=Math.max(...data),rng=mx-mn||1;const pts=data.map((v,i)=>[(i/(data.length-1))*w,h-((v-mn)/rng)*(h-7)-3.5]);const line=pts.map(p=>`${p[0]},${p[1]}`).join(" ");const last=pts[pts.length-1];const gid=`sg${(color||"").replace("#","")}`;return(<svg width={w} height={h} style={{display:"block"}}><defs><linearGradient id={gid} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity="0.32"/><stop offset="100%" stopColor={color} stopOpacity="0"/></linearGradient></defs><polygon points={`${line} ${w},${h} 0,${h}`} fill={`url(#${gid})`}/><polyline points={line} fill="none" stroke={color} strokeWidth={1.6} strokeLinejoin="round" strokeLinecap="round"/><circle cx={last[0]} cy={last[1]} r={2.6} fill={color}/></svg>);};
 const RSIMeter=({value=50})=>{const v=Math.min(100,Math.max(0,value));const col=v<35?C.red:v>65?C.gold:C.green;return(<div style={{display:"flex",alignItems:"center",gap:6}}><div style={{width:50,height:5,background:C.dim,borderRadius:3,overflow:"hidden"}}><div style={{width:`${v}%`,height:"100%",background:col,borderRadius:3}}/></div><span style={{fontSize:10,fontWeight:700,color:col,fontFamily:C.display}}>{v}</span></div>);};
 const Dots=()=>(<div style={{display:"flex",gap:5,padding:"4px 0",alignItems:"center"}}>{[1,2,3].map(i=><div key={i} className={`d${i}`} style={{width:6,height:6,borderRadius:"50%",background:C.accent}}/>)}<span style={{fontSize:10,color:C.muted,marginLeft:4}}>Thinking…</span></div>);
 const Spinner=()=><div className="spin" style={{width:14,height:14,border:`2px solid ${C.accent}30`,borderTop:`2px solid ${C.accent}`,borderRadius:"50%",display:"inline-block"}}/>;
+// Render **bold** spans in AI replies as gold highlights — no markdown lib, no HTML injection.
+const fmtMsg=(s)=>String(s).split(/(\*\*[^*]+\*\*)/g).map((p,i)=>p.startsWith("**")&&p.endsWith("**")?<b key={i} style={{color:"#ffd98a",fontWeight:700}}>{p.slice(2,-2)}</b>:p);
 
 // ─── WATCHLIST BASE DATA ─────────────────────────────────────────
 const US_BASE=[
@@ -136,7 +150,7 @@ function MarketHeader({marketTab,setMarketTab,priceStatus,fetchPrices,lastUpdate
       {mkts.map(m=>(<div key={m.id} onClick={()=>setMarketTab(m.id)} style={{background:marketTab===m.id?C2.s2:C2.s1,border:`1px solid ${marketTab===m.id?m.col+"50":C2.border}`,borderRadius:7,padding:"10px 12px",cursor:"pointer",transition:"all 0.15s"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
           <span style={{fontFamily:C2.display,fontWeight:700,fontSize:11,color:marketTab===m.id?m.col:C2.muted}}>{m.flag} {m.label}</span>
-          <span style={{fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:3,background:m.open?C2.green+"18":C2.red+"18",color:m.open?C2.green:C2.red}}>{m.open?"● OPEN":"● CLOSED"}</span>
+          <span style={{fontSize:9,fontWeight:700,padding:"2px 8px",borderRadius:999,background:m.open?C2.green+"18":C2.red+"18",color:m.open?C2.green:C2.red,display:"inline-flex",alignItems:"center",gap:4}}>{m.open?<><span className="live-dot" style={{background:C2.green}}/>OPEN</>:"● CLOSED"}</span>
         </div>
         <div style={{fontFamily:C2.mono,fontSize:15,fontWeight:700,color:marketTab===m.id?C2.text:C2.muted,letterSpacing:"0.04em"}}>{fmt(m.tz)}</div>
         <div style={{fontSize:9,color:C2.muted,marginTop:2}}>{fmtD(m.tz)} · {m.hours}</div>
@@ -554,7 +568,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
         <StatCard label="Trades Logged" value={journal.length} sub={`${journal.filter(t=>t.closed).length} closed`} color={C.purple}/>
       </div>
       {PortfolioIntel()}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+      <div className="tiq-2col" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
         <Card>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
             <CT>Holdings</CT><Btn small color={C.accent} onClick={()=>setShowAddH(p=>!p)}>+ Add</Btn>
@@ -590,7 +604,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
           <tbody>{WATCHLIST.slice(0,8).map(w=>{const sc=scanResults.find(s=>s.ticker===w.ticker);const sym=shortName(w.ticker);const curr=symbolFor(w.currency);const dp=decimalsFor(w.currency);const pending=w.price==null;return(
             <tr key={w.ticker} className="tiq-row" style={{cursor:"pointer"}} onClick={()=>{if(!pending){setChartTicker(w.ticker);setTab('chart');}}}>
               <td style={{padding:"7px 5px"}}><div style={{fontFamily:C.display,fontWeight:700,fontSize:12}}>{sym}{w.custom&&<span style={{fontSize:8,color:C.accent,marginLeft:4,verticalAlign:"middle"}}>★</span>}</div><div style={{fontSize:9,color:w.chg>=0?C.green:C.red}}>{pending?"":`${ps(w.chg)}${w.chg}%`}</div></td>
-              <td style={{padding:"7px 5px",fontWeight:600}}>{pending?<span style={{color:C.muted,fontSize:9}}>fetching…</span>:`${curr}${w.price.toFixed(dp)}`}</td>
+              <td style={{padding:"7px 5px",fontWeight:600}}>{pending?<span className="shim"/>:`${curr}${w.price.toFixed(dp)}`}</td>
               <td style={{padding:"7px 5px"}}>{pending?<span style={{color:C.muted}}>—</span>:<RSIMeter value={w.rsi}/>}</td>
               <td style={{padding:"7px 5px"}}><Tag c={sc?.sigColor||C.muted}>{sc?.signal||"WAIT"}</Tag></td>
               <td style={{padding:"7px 5px"}} onClick={w.custom?(e=>{e.stopPropagation();removeCustomTicker(w.ticker);}):undefined}>{w.custom?<span title="Remove" style={{color:C.red,cursor:"pointer",fontSize:12}}>✕</span>:<Sparkline data={w.spark} color={w.chg>=0?C.green:C.red} w={55} h={22}/>}</td>
@@ -610,8 +624,8 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
       </div>
       <div style={{flex:1,overflowY:"auto",paddingRight:4,marginBottom:10}}>
         {msgs.map((m,i)=>(<div key={i} className="msg-in" style={{display:"flex",gap:10,marginBottom:12,flexDirection:m.role==="user"?"row-reverse":"row",alignItems:"flex-start"}}>
-          <div style={{width:27,height:27,borderRadius:6,background:m.role==="user"?C.blue+"25":C.accent+"18",border:`1px solid ${m.role==="user"?C.blue:C.accent}30`,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:C.display,fontWeight:700,fontSize:11,color:m.role==="user"?C.blue:C.accent,flexShrink:0}}>{m.role==="user"?"U":"AI"}</div>
-          <div style={{background:m.role==="user"?C.blue+"18":C.s2,border:`1px solid ${m.role==="user"?C.blue+"30":C.border}`,borderRadius:m.role==="user"?"12px 12px 4px 12px":"12px 12px 12px 4px",padding:"10px 14px",maxWidth:"80%",fontSize:12,lineHeight:1.7,color:C.text,whiteSpace:"pre-wrap",fontFamily:C.mono}}>{m.content}</div>
+          <div style={{width:29,height:29,borderRadius:9,background:m.role==="user"?C.blue+"25":`linear-gradient(135deg,${C.accent}2e,${C.purple}22)`,border:`1px solid ${m.role==="user"?C.blue:C.accent}40`,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:C.display,fontWeight:800,fontSize:11,color:m.role==="user"?C.blue:C.accent,flexShrink:0,boxShadow:m.role==="user"?"none":`0 0 14px ${C.accent}22`}}>{m.role==="user"?"U":"IQ"}</div>
+          <div style={{background:m.role==="user"?C.blue+"18":C.s2,border:`1px solid ${m.role==="user"?C.blue+"30":C.border}`,borderRadius:m.role==="user"?"12px 12px 4px 12px":"12px 12px 12px 4px",padding:"10px 14px",maxWidth:"80%",fontSize:12.5,lineHeight:1.7,color:C.text,whiteSpace:"pre-wrap",fontFamily:C.mono}}>{m.role==="assistant"?fmtMsg(m.content):m.content}</div>
         </div>))}
         {aiLoading&&(<div style={{display:"flex",gap:10,alignItems:"flex-start"}}><div style={{width:27,height:27,borderRadius:6,background:C.accent+"18",border:`1px solid ${C.accent}30`,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:C.display,fontWeight:700,fontSize:11,color:C.accent}}>AI</div><div style={{background:C.s2,border:`1px solid ${C.border}`,borderRadius:"12px 12px 12px 4px",padding:"12px 14px"}}><Dots/></div></div>)}
         <div ref={chatEnd}/>
@@ -857,7 +871,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
       <div style={{display:"flex",gap:2,borderBottom:`1px solid ${C.border}`,background:C.s1+"d9",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",overflowX:"auto",padding:"0 8px"}}>
         {TABS.map(t=>(<button key={t.id} className="tiq-btn" onClick={()=>setTab(t.id)} aria-current={tab===t.id?"page":undefined} style={{padding:"11px 13px",fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",fontFamily:C.display,background:tab===t.id?C.accent+"12":"none",border:"none",borderRadius:"8px 8px 0 0",borderBottom:tab===t.id?`2px solid ${C.accent}`:"2px solid transparent",color:tab===t.id?C.accent:C.muted,whiteSpace:"nowrap"}}>{t.l}</button>))}
       </div>
-      <div style={{padding:18,maxWidth:1200,margin:"0 auto"}}>
+      <div key={tab} className="tab-in" style={{padding:18,maxWidth:1240,margin:"0 auto"}}>
         {tab==="council"&&<div style={{height:"calc(100vh - 140px)",minHeight:480,margin:-18}}><Council theme={C} db={db} supabaseReady={SUPABASE_READY} userId={userId} holdings={holdings} journal={journal} reviews={Object.values(reviews)} opportunities={opportunities} watchlist={[...US_WATCHLIST,...INDIA_WATCHLIST]}/></div>}{tab==="perf"&&<Performance journal={journal} reviews={Object.values(reviews)} theme={C}/>}{tab==="opps"&&Opportunities()}{tab==="dash"&&Dashboard()}{tab==="ai"&&AIChat()}{tab==="scanner"&&Scanner()}{tab==="chart"&&<div style={{height:"calc(100vh - 140px)",margin:-18}}><ChartView ticker={chartTicker} market={marketTab} onClose={null}/></div>}{tab==="strategies"&&StrategiesTab()}{tab==="journal"&&JournalTab()}{tab==="learn"&&Learn()}
       </div>
       {researchOpp&&<ResearchWorkspace opp={researchOpp} theme={C} onSave={saveResearch} onCreateTrade={(o)=>{critiqueAndLog(o);setResearchOpp(null);}} onClose={()=>setResearchOpp(null)}/>}
