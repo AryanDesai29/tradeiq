@@ -345,6 +345,9 @@ export default function Council({ theme: C, db, supabaseReady, userId, holdings,
         <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: "34%", background: "linear-gradient(180deg, transparent, #03050acc), repeating-radial-gradient(ellipse 120% 90% at 50% 130%, transparent 0 34px, #ffffff04 34px 36px)", pointerEvents: "none" }} />
         <div style={{ position: "absolute", left: "50%", top: 34, transform: "translateX(-50%)", width: 150, height: 150, borderRadius: "50%", border: `3px double ${C.gold}22`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 46, opacity: 0.35, pointerEvents: "none", boxShadow: `inset 0 0 30px ${C.gold}10` }}>⚖️</div>
         {[...Array(14)].map((_, i) => <div key={i} style={{ position: "absolute", left: `${(i * 67) % 100}%`, top: `${(i * 37) % 90}%`, width: 3, height: 3, borderRadius: "50%", background: i % 3 ? C.accent : C.gold, animation: `cDust ${4 + (i % 5)}s ease-in-out ${i * 0.6}s infinite`, pointerEvents: "none" }} />)}
+        {/* ambient drifting light blobs */}
+        <div style={{ position: "absolute", left: "10%", top: "16%", width: 280, height: 280, borderRadius: "50%", background: `radial-gradient(circle, ${C.accent}0d, transparent 70%)`, animation: "cBob 9s ease-in-out infinite", pointerEvents: "none" }} />
+        <div style={{ position: "absolute", right: "8%", top: "28%", width: 320, height: 320, borderRadius: "50%", background: `radial-gradient(circle, ${C.gold}0b, transparent 70%)`, animation: "cBob 12s ease-in-out 1.6s infinite", pointerEvents: "none" }} />
 
         {/* header */}
         <div style={{ position: "absolute", top: 12, left: 0, right: 0, textAlign: "center", zIndex: 9, pointerEvents: "none" }}>

@@ -8,8 +8,11 @@ const C = {
 
 export default function Login({ onSignIn }) {
   return (
-    <div style={{ minHeight: "100vh", background: `radial-gradient(900px 460px at 50% -10%, #16203a 0%, transparent 60%), ${C.bg}`, color: C.text, fontFamily: C.mono, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-      <div style={{ width: "100%", maxWidth: 380, border: `1px solid ${C.border}`, borderRadius: 14, padding: 32, background: C.s1, textAlign: "center", boxShadow: "inset 0 1px 0 #ffffff09, 0 24px 60px #00000066" }}>
+    <div style={{ minHeight: "100vh", background: `radial-gradient(900px 460px at 50% -10%, #16203a 0%, transparent 60%), ${C.bg}`, color: C.text, fontFamily: C.mono, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, position: "relative", overflow: "hidden" }}>
+      {/* the council, faintly seated around the gate */}
+      {["🦉", "🎙️", "🐂", "🧙", "🤖", "🐺", "🌍", "🐻", "🕵️", "⚖️"].map((e, i) => { const a = -Math.PI / 2 + (i / 10) * Math.PI * 2; return (
+        <div key={i} style={{ position: "absolute", left: `${50 + 40 * Math.cos(a)}%`, top: `${50 + 42 * Math.sin(a)}%`, transform: "translate(-50%,-50%)", fontSize: 30, opacity: 0.1, pointerEvents: "none", filter: "grayscale(0.25)" }}>{e}</div>); })}
+      <div style={{ width: "100%", maxWidth: 380, border: `1px solid ${C.border}`, borderRadius: 14, padding: 32, background: C.s1, textAlign: "center", boxShadow: "inset 0 1px 0 #ffffff09, 0 24px 60px #00000066", position: "relative" }}>
         <div style={{ fontFamily: C.serif, fontWeight: 900, fontSize: 32, background: `linear-gradient(95deg,${C.accent},#ffd98a)`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", marginBottom: 6 }}>TradeIQ</div>
         <div style={{ fontSize: 12, color: C.muted, marginBottom: 28, lineHeight: 1.6 }}>
           Private AI trading workspace.<br />Sign in to access your portfolio, journal &amp; AI advisor.
