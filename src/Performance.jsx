@@ -1,6 +1,8 @@
 import { performance, byCurrency, monthlyReturns } from "./analytics.js";
 import { recurringMistakes } from "./reviews.js";
 import { thesisStats, thesisCalibration } from "./thesis.js";
+import { T } from "./theme.js";
+import { Money, Term } from "./ui.jsx";
 import PersonalAlpha from "./Alpha.jsx";
 
 // ─── PERFORMANCE DASHBOARD (Priority 1) ──────────────────────────────────────
@@ -19,13 +21,12 @@ export default function Performance({ journal = [], reviews = [], theme }) {
   const pct = (v) => `${(v * 100).toFixed(0)}%`;
   const r1 = (v) => `${v >= 0 ? "+" : ""}${v.toFixed(2)}R`;
   const pf = (v) => (v === Infinity ? "∞" : v.toFixed(2));
-  const money = (sym, v) => `${v < 0 ? "−" : ""}${sym}${Math.abs(v).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 
   const Tile = ({ label, value, sub, color = C.accent }) => (
     <div style={{ background: C.s2, border: `1px solid ${C.border}`, borderLeft: `3px solid ${color}`, borderRadius: 7, padding: 14 }}>
-      <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: C.muted, marginBottom: 5 }}>{label}</div>
+      <div style={{ fontSize: T.micro, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: C.muted, marginBottom: 5 }}>{label}</div>
       <div style={{ fontFamily: C.display, fontSize: 22, fontWeight: 800, color, lineHeight: 1 }}>{value}</div>
-      {sub != null && <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>{sub}</div>}
+      {sub != null && <div style={{ fontSize: T.caption, color: C.muted, marginTop: 4 }}>{sub}</div>}
     </div>
   );
 
@@ -58,11 +59,11 @@ export default function Performance({ journal = [], reviews = [], theme }) {
 
       {/* Headline risk-normalised metrics (currency-agnostic) */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10, marginBottom: 14 }}>
-        <Tile label="Win Rate" value={pct(p.winRate)} sub={`${p.wins}W / ${p.losses}L`} color={C.accent} />
-        <Tile label="Expectancy" value={r1(p.expectancyR)} sub="avg R per trade" color={p.expectancyR >= 0 ? C.green : C.red} />
-        <Tile label="Profit Factor" value={pf(p.profitFactor)} sub="gross win ÷ loss (R)" color={p.profitFactor >= 1 ? C.green : C.red} />
+        <Tile label={<Term k="winRate">Win Rate</Term>} value={pct(p.winRate)} sub={`${p.wins}W / ${p.losses}L`} color={C.accent} />
+        <Tile label={<Term k="expectancy">Expectancy</Term>} value={r1(p.expectancyR)} sub="avg R per trade" color={p.expectancyR >= 0 ? C.green : C.red} />
+        <Tile label={<Term k="profitFactor">Profit Factor</Term>} value={pf(p.profitFactor)} sub="gross win ÷ loss (R)" color={p.profitFactor >= 1 ? C.green : C.red} />
         <Tile label="Payoff Ratio" value={p.payoff ? `${p.payoff.toFixed(2)}×` : "—"} sub="avg win ÷ avg loss" color={C.gold} />
-        <Tile label="Max Drawdown" value={`${p.maxDrawdownR.toFixed(2)}R`} sub="peak-to-trough" color={C.red} />
+        <Tile label={<Term k="maxDrawdown">Max Drawdown</Term>} value={`${p.maxDrawdownR.toFixed(2)}R`} sub="peak-to-trough" color={C.red} />
         <Tile label="Avg Win / Loss" value={`${p.avgWinR.toFixed(2)} / ${p.avgLossR.toFixed(2)}R`} sub="in R-multiples" color={C.purple} />
       </div>
 
@@ -72,13 +73,13 @@ export default function Performance({ journal = [], reviews = [], theme }) {
         return (
           <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderLeft: `3px solid ${accColor}`, borderRadius: 8, padding: 16, marginBottom: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-              <div style={{ fontFamily: C.display, fontWeight: 800, fontSize: 14 }}>Investor IQ <span style={{ fontSize: 10, fontWeight: 400, color: C.dim }}>· thesis accuracy, not P&amp;L</span></div>
+              <div style={{ fontFamily: C.display, fontWeight: 800, fontSize: 14 }}><Term k="investorIq">Investor IQ</Term> <span style={{ fontSize: T.caption, fontWeight: 400, color: C.dim }}>· thesis accuracy, not P&amp;L</span></div>
               <div style={{ fontSize: 11, color: C.muted }}>{iq.n} thesis{iq.n !== 1 ? "es" : ""} judged</div>
             </div>
             <div style={{ display: "flex", gap: 20, flexWrap: "wrap", alignItems: "center" }}>
               <div>
                 <div style={{ fontFamily: C.display, fontWeight: 800, fontSize: 34, color: accColor, lineHeight: 1 }}>{pct(acc)}</div>
-                <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>thesis accuracy</div>
+                <div style={{ fontSize: T.caption, color: C.muted, marginTop: 2 }}><Term k="thesisAccuracy">thesis accuracy</Term></div>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(96px,1fr))", gap: 10, flex: 1, minWidth: 240 }}>
                 {[
@@ -88,14 +89,14 @@ export default function Performance({ journal = [], reviews = [], theme }) {
                   ["Avg conviction", cal.n ? pct(cal.avgConfidence) : "—", C.purple],
                 ].map(([l, v, c]) => (
                   <div key={l} style={{ background: C.s2, border: `1px solid ${C.border}`, borderRadius: 5, padding: 8 }}>
-                    <div style={{ fontSize: 8, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 2 }}>{l}</div>
+                    <div style={{ fontSize: T.caption, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 2 }}>{l}</div>
                     <div style={{ fontFamily: C.display, fontWeight: 700, fontSize: 14, color: c }}>{v}</div>
                   </div>
                 ))}
               </div>
             </div>
-            <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}`, fontSize: 9, color: C.muted }}>
-              {cal.n > 0 && <span>Calibration: <b style={{ color: cal.label === "Good" ? C.green : cal.label === "Fair" ? C.gold : C.red }}>{cal.label}</b> (conviction {pct(cal.avgConfidence)} vs reality {pct(cal.actualAccuracy)})</span>}
+            <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}`, fontSize: T.caption, color: C.muted }}>
+              {cal.n > 0 && <span><Term k="calibration">Calibration</Term>: <b style={{ color: cal.label === "Good" ? C.green : cal.label === "Fair" ? C.gold : C.red }}>{cal.label}</b> (conviction {pct(cal.avgConfidence)} vs reality {pct(cal.actualAccuracy)})</span>}
               <span>AI thesis accuracy: <b style={{ color: C.text }}>{pct(iq.aiAccuracy)}</b></span>
               <span>You agree with AI: <b style={{ color: C.text }}>{pct(iq.agreementRate)}</b> · override {pct(iq.overrideRate)}</span>
             </div>
@@ -110,7 +111,7 @@ export default function Performance({ journal = [], reviews = [], theme }) {
           <line x1="0" y1={zeroY} x2={cw} y2={zeroY} stroke={C.border} strokeWidth="0.5" />
           <polyline points={pts} fill="none" stroke={curve[curve.length - 1] >= 0 ? C.green : C.red} strokeWidth="1.2" vectorEffect="non-scaling-stroke" />
         </svg>
-        <div style={{ fontSize: 10, color: C.muted, marginTop: 6 }}>Final: <b style={{ color: curve[curve.length - 1] >= 0 ? C.green : C.red }}>{r1(curve[curve.length - 1] || 0)}</b> cumulative</div>
+        <div style={{ fontSize: T.caption, color: C.muted, marginTop: 6 }}>Final: <b style={{ color: curve[curve.length - 1] >= 0 ? C.green : C.red }}>{r1(curve[curve.length - 1] || 0)}</b> cumulative</div>
       </div>
 
       {/* Per-currency money blocks (never summed across currencies) */}
@@ -121,12 +122,12 @@ export default function Performance({ journal = [], reviews = [], theme }) {
               <span style={{ fontFamily: C.display, fontWeight: 800, fontSize: 14 }}>{b.symbol} {b.currency} trades</span>
               <span style={{ fontSize: 11, color: C.muted }}>{b.trades} closed</span>
             </div>
-            <div style={{ fontFamily: C.display, fontWeight: 800, fontSize: 24, color: b.net >= 0 ? C.green : C.red, marginBottom: 12 }}>{money(b.symbol, b.net)}<span style={{ fontSize: 11, color: C.muted, fontWeight: 400, marginLeft: 6 }}>net P&L</span></div>
+            <div style={{ marginBottom: 12 }}><Money value={b.net} currency={b.currency} signed size={24} /><span style={{ fontSize: T.caption, color: C.muted, fontWeight: 400, marginLeft: 6 }}>net P&L</span></div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              {[["Avg Win", money(b.symbol, b.avgWin), C.green], ["Avg Loss", money(b.symbol, b.avgLoss), C.red], ["Profit Factor", pf(b.profitFactor), b.profitFactor >= 1 ? C.green : C.red], ["W / L", `${b.wins} / ${b.losses}`, C.text], ["Largest Win", money(b.symbol, b.largestWin), C.green], ["Largest Loss", money(b.symbol, b.largestLoss), C.red]].map(([l, v, c]) => (
+              {[["Avg Win", <Money value={b.avgWin} currency={b.currency} color={C.green} />, C.green], ["Avg Loss", <Money value={b.avgLoss} currency={b.currency} color={C.red} />, C.red], ["Profit Factor", pf(b.profitFactor), b.profitFactor >= 1 ? C.green : C.red], ["W / L", `${b.wins} / ${b.losses}`, C.text], ["Largest Win", <Money value={b.largestWin} currency={b.currency} color={C.green} />, C.green], ["Largest Loss", <Money value={b.largestLoss} currency={b.currency} color={C.red} />, C.red]].map(([l, v, c]) => (
                 <div key={l} style={{ background: C.s2, border: `1px solid ${C.border}`, borderRadius: 5, padding: 8 }}>
-                  <div style={{ fontSize: 8, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 2 }}>{l}</div>
-                  <div style={{ fontFamily: C.display, fontWeight: 700, fontSize: 13, color: c }}>{v}</div>
+                  <div style={{ fontSize: T.caption, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 2 }}>{l}</div>
+                  <div style={{ fontFamily: C.display, fontWeight: 700, fontSize: T.data, color: c }}>{v}</div>
                 </div>
               ))}
             </div>
@@ -141,9 +142,9 @@ export default function Performance({ journal = [], reviews = [], theme }) {
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {mistakes.slice(0, 8).map((m) => (
               <div key={m.tag} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <div style={{ flex: 1, fontSize: 11, color: C.text }}>{m.label}</div>
+                <div style={{ flex: 1, fontSize: T.caption, color: C.text }}>{m.label}</div>
                 <div style={{ height: 5, width: `${Math.min(100, m.count * 18)}px`, minWidth: 14, background: C.red, borderRadius: 3 }} />
-                <div style={{ fontFamily: C.display, fontWeight: 700, fontSize: 12, color: C.red, width: 24, textAlign: "right" }}>{m.count}×</div>
+                <div style={{ fontFamily: C.display, fontWeight: 700, fontSize: T.data, color: C.red, width: 24, textAlign: "right" }}>{m.count}×</div>
               </div>
             ))}
           </div>
@@ -158,19 +159,21 @@ export default function Performance({ journal = [], reviews = [], theme }) {
       {/* Monthly returns per currency */}
       <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 8, padding: 16 }}>
         <div style={{ fontFamily: C.display, fontWeight: 700, fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", color: C.muted, marginBottom: 10 }}>Monthly Returns</div>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
-          <thead><tr>{["Month", ...cur.map((b) => `${b.symbol} ${b.currency}`)].map((h) => (
-            <th key={h} style={{ textAlign: h === "Month" ? "left" : "right", padding: "5px 6px", fontSize: 9, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.muted, borderBottom: `1px solid ${C.border}` }}>{h}</th>
-          ))}</tr></thead>
-          <tbody>{Object.keys(monthly).sort().reverse().map((mo) => (
-            <tr key={mo}>
-              <td style={{ padding: "6px", fontFamily: C.mono, color: C.text }}>{mo}</td>
-              {cur.map((b) => { const v = monthly[mo][b.currency]; return (
-                <td key={b.currency} style={{ padding: "6px", textAlign: "right", fontWeight: 600, color: v == null ? C.muted : v >= 0 ? C.green : C.red }}>{v == null ? "—" : money(b.symbol, v)}</td>
-              ); })}
-            </tr>
-          ))}</tbody>
-        </table>
+        <div className="tiq-scroll">
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: T.data }}>
+            <thead><tr>{["Month", ...cur.map((b) => `${b.symbol} ${b.currency}`)].map((h) => (
+              <th key={h} style={{ textAlign: h === "Month" ? "left" : "right", padding: "5px 6px", fontSize: T.caption, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.muted, borderBottom: `1px solid ${C.border}` }}>{h}</th>
+            ))}</tr></thead>
+            <tbody>{Object.keys(monthly).sort().reverse().map((mo) => (
+              <tr key={mo}>
+                <td style={{ padding: "6px", fontFamily: C.mono, color: C.text }}>{mo}</td>
+                {cur.map((b) => { const v = monthly[mo][b.currency]; return (
+                  <td key={b.currency} style={{ padding: "6px", textAlign: "right" }}>{v == null ? <span style={{ color: C.muted }}>—</span> : <Money value={v} currency={b.currency} code={false} color={v >= 0 ? C.green : C.red} />}</td>
+                ); })}
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

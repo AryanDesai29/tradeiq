@@ -68,7 +68,7 @@ export default function TickerSearch({ value, onChange, onSelect, market = "us",
 
   return (
     <div ref={boxRef} style={{ position: "relative" }}>
-      {label && <div style={{ fontSize: 9, color: C.muted, marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.1em" }}>{label}</div>}
+      {label && <div style={{ fontSize: 11, color: C.muted, marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.1em" }}>{label}</div>}
       <input
         className="tiq-input"
         value={value}
@@ -78,9 +78,9 @@ export default function TickerSearch({ value, onChange, onSelect, market = "us",
         placeholder={placeholder || "Search name or ticker…"}
         autoComplete="off"
         spellCheck={false}
-        style={{ background: C.s2, border: `1px solid ${C.border}`, borderRadius: 5, padding: "7px 11px", color: C.text, fontFamily: C.mono, fontSize: 11, width: "100%" }}
+        style={{ background: C.s2, border: `1px solid ${C.border}`, borderRadius: 5, padding: "7px 11px", color: C.text, fontFamily: C.mono, fontSize: 13, width: "100%" }}
       />
-      {loading && <div style={{ position: "absolute", right: 9, top: label ? 27 : 9, fontSize: 9, color: C.muted }}>…</div>}
+      {loading && <div style={{ position: "absolute", right: 9, top: label ? 29 : 9, fontSize: 11, color: C.muted }}>…</div>}
       {open && results.length > 0 && (
         <div style={{ position: "absolute", top: "100%", left: 0, right: 0, marginTop: 4, background: C.s2, border: `1px solid ${C.border}`, borderRadius: 6, zIndex: 50, maxHeight: 240, overflowY: "auto", boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
           {results.map((r, i) => (
@@ -91,12 +91,12 @@ export default function TickerSearch({ value, onChange, onSelect, market = "us",
               style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "7px 10px", cursor: "pointer", background: hi === i ? C.s3 : "transparent", borderBottom: i < results.length - 1 ? `1px solid ${C.border}` : "none" }}
             >
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontFamily: C.display, fontWeight: 700, fontSize: 12, color: C.text }}>
-                  {r.symbol} <span style={{ fontSize: 9, color: r.currency === "INR" ? C.gold : C.blue, marginLeft: 4 }}>{symbolFor(r.currency)} {r.exchange || (r.currency === "INR" ? "NSE" : "US")}</span>
+                <div style={{ fontFamily: C.display, fontWeight: 700, fontSize: 14, color: C.text }}>
+                  {r.symbol} <span style={{ fontSize: 11, color: r.currency === "INR" ? C.gold : C.blue, marginLeft: 4 }}>{symbolFor(r.currency)} {r.exchange || (r.currency === "INR" ? "NSE" : "US")}</span>
                 </div>
-                <div style={{ fontSize: 9, color: C.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.name}</div>
+                <div style={{ fontSize: 11, color: C.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.name}</div>
               </div>
-              <span style={{ fontSize: 9, color: C.muted, flexShrink: 0 }}>{r.type}</span>
+              <span style={{ fontSize: 11, color: C.muted, flexShrink: 0 }}>{r.type}</span>
             </div>
           ))}
         </div>
