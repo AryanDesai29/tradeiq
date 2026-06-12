@@ -490,7 +490,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
 
   const syncLabel={idle:"",syncing:"⟳ Syncing",synced:"✓ Synced",error:"⚠ Error"};
   const syncColor={idle:C.muted,syncing:C.gold,synced:C.green,error:C.red};
-  const TABS=[{id:"council",l:"🏛️ Council"},{id:"perf",l:"🏆 Performance"},{id:"opps",l:"💡 Opportunities"},{id:"dash",l:"📊 Dashboard"},{id:"ai",l:"🤖 AI Advisor"},{id:"scanner",l:"🔍 Scanner"},{id:"chart",l:"📈 Charts"},{id:"strategies",l:"⚡ Strategies"},{id:"journal",l:"📓 Journal"},{id:"learn",l:"📚 Learn"}];
+  const TABS=[{id:"dash",l:"🎛️ Mission Control"},{id:"council",l:"🏛️ Council"},{id:"perf",l:"🏆 Performance"},{id:"opps",l:"💡 Opportunities"},{id:"ai",l:"🤖 AI Advisor"},{id:"scanner",l:"🔍 Scanner"},{id:"chart",l:"📈 Charts"},{id:"strategies",l:"⚡ Strategies"},{id:"journal",l:"📓 Journal"},{id:"learn",l:"📚 Learn"}];
 
   // ── DASHBOARD ──
   // ── OPPORTUNITIES TAB — proactive AI-discovered theses to critique ──
