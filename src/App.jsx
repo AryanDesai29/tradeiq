@@ -11,7 +11,7 @@ import { THESIS_TYPES, THESIS_FIELD_MAX, thesisComplete, missingThesisFields } f
 import { normalizeOpportunities, opportunityReturn } from "./opportunities.js";
 import ResearchWorkspace from "./ResearchWorkspace.jsx";
 import Council from "./Council.jsx";
-import { sectorExposure, themeExposure, concentration, correlationClusters, portfolioRiskFlags } from "./portfolio.js";
+import MissionControl from "./MissionControl.jsx";
 import { createClient } from "@supabase/supabase-js";
 import { T } from "./theme.js";
 import { TickerID, Money, Term } from "./ui.jsx";
@@ -110,7 +110,6 @@ const CT=({children})=>(<div style={{fontFamily:C.display,fontWeight:700,fontSiz
 const Btn=({children,onClick,color=C.accent,solid,small,style={}})=>(<button className="tiq-btn" onClick={onClick} style={{background:solid?`linear-gradient(135deg,${color},${color}d8)`:color+"14",border:solid?"none":`1px solid ${color}3a`,borderRadius:8,color:solid?C.bg:color,fontFamily:C.display,fontWeight:700,fontSize:small?T.caption:12,letterSpacing:"0.08em",textTransform:"uppercase",padding:small?"5px 11px":"9px 17px",whiteSpace:"nowrap",boxShadow:solid?`0 4px 16px ${color}38`:"none",...style}}>{children}</button>);
 const Inp=({label,value,onChange,placeholder,type="text",style={}})=>(<div>{label&&<div style={{fontSize:T.caption,color:C.muted,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.1em",fontWeight:600}}>{label}</div>}<input className="tiq-input" type={type} value={value} onChange={onChange} placeholder={placeholder} style={{background:C.s2,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 12px",color:C.text,fontFamily:C.mono,fontSize:T.data,width:"100%",transition:"border-color 0.18s ease,box-shadow 0.18s ease",...style}}/></div>);
 const Sel=({label,value,onChange,options})=>(<div>{label&&<div style={{fontSize:T.caption,color:C.muted,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.1em",fontWeight:600}}>{label}</div>}<select className="tiq-input" value={value} onChange={onChange} style={{background:C.s2,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 12px",color:C.text,fontFamily:C.mono,fontSize:T.data,width:"100%",cursor:"pointer"}}>{options.map(o=><option key={o}>{o}</option>)}</select></div>);
-const StatCard=({label,value,sub,color=C.accent})=>(<div className="tiq-card" style={{background:`linear-gradient(180deg,${C.s3}55,transparent 48px),${C.s2}`,border:`1px solid ${C.border}`,borderLeft:`3px solid ${color}`,borderRadius:10,padding:14,boxShadow:"inset 0 1px 0 #ffffff08"}}><div style={{fontSize:T.micro,fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:C.muted,marginBottom:6}}>{label}</div><div style={{fontFamily:C.display,fontSize:22,fontWeight:800,color,lineHeight:1,textShadow:`0 0 24px ${color}30`}}>{value}</div>{sub&&<div style={{fontSize:T.caption,color:C.muted,marginTop:4}}>{sub}</div>}</div>);
 const Sparkline=({data=[],color=C.accent,w=80,h=28})=>{if(data.length<2)return null;const mn=Math.min(...data),mx=Math.max(...data),rng=mx-mn||1;const pts=data.map((v,i)=>[(i/(data.length-1))*w,h-((v-mn)/rng)*(h-7)-3.5]);const line=pts.map(p=>`${p[0]},${p[1]}`).join(" ");const last=pts[pts.length-1];const gid=`sg${(color||"").replace("#","")}`;return(<svg width={w} height={h} style={{display:"block"}}><defs><linearGradient id={gid} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity="0.32"/><stop offset="100%" stopColor={color} stopOpacity="0"/></linearGradient></defs><polygon points={`${line} ${w},${h} 0,${h}`} fill={`url(#${gid})`}/><polyline points={line} fill="none" stroke={color} strokeWidth={1.6} strokeLinejoin="round" strokeLinecap="round"/><circle cx={last[0]} cy={last[1]} r={2.6} fill={color}/></svg>);};
 const RSIMeter=({value=50})=>{const v=Math.min(100,Math.max(0,value));const col=v<35?C.red:v>65?C.gold:C.green;return(<div style={{display:"flex",alignItems:"center",gap:6}}><div style={{width:50,height:5,background:C.dim,borderRadius:3,overflow:"hidden"}}><div style={{width:`${v}%`,height:"100%",background:col,borderRadius:3}}/></div><span style={{fontSize:T.caption,fontWeight:700,color:col,fontFamily:C.display}}>{v}</span></div>);};
 const Dots=()=>(<div style={{display:"flex",gap:5,padding:"4px 0",alignItems:"center"}}>{[1,2,3].map(i=><div key={i} className={`d${i}`} style={{width:6,height:6,borderRadius:"50%",background:C.accent}}/>)}<span style={{fontSize:T.caption,color:C.muted,marginLeft:4}}>Thinking…</span></div>);
@@ -187,7 +186,7 @@ const LS = {
 function TradeIQ({ session }) {
   const userId = session?.user?.id || "local";
   const authToken = session?.access_token || null; // sent to /api/prices + /api/search for per-user rate limiting
-  const [tab,setTab]           = useState("perf");
+  const [tab,setTab]           = useState("dash"); // Mission Control is the landing screen
   const [holdings,setHoldings] = useState(()=>LS.load(`tradeiq_holdings_backup_${userId}`,[]).map(withCurrency));
   const [journal,setJournal]   = useState(()=>LS.load(`tradeiq_journal_backup_${userId}`,[]).map(withCurrency));
   const [syncStatus,setSS]     = useState("idle");
@@ -543,37 +542,10 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
 
   // Portfolio in a common base (USD) so ₹ and $ positions are comparable.
   const FX={USD:1,INR:1/84};
-  const pfItems=holdings.map(h=>({ticker:h.ticker,sector:h.sector,value:(+h.shares||0)*(+h.price||0)*(FX[h.currency]||1)}));
-  const PortfolioIntel=()=>{
-    if(holdings.length===0)return null;
-    const con=concentration(pfItems), themes=themeExposure(pfItems), sectors=sectorExposure(pfItems);
-    const clusters=correlationClusters(pfItems), flags=portfolioRiskFlags(pfItems);
-    const maxT=Math.max(...themes.map(t=>t.pct),0.01);
-    const Bars=({rows,label})=>(<div style={{flex:1,minWidth:220}}><div style={{fontSize:T.caption,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6}}>{label}</div>{rows.slice(0,6).map(r=>(<div key={r.key} style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}><div style={{width:120,fontSize:T.caption,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.key}{r.count>1&&<span style={{color:C.muted}}> ×{r.count}</span>}</div><div style={{flex:1,height:6,background:C.dim,borderRadius:3,overflow:"hidden"}}><div style={{width:`${(r.pct/maxT)*100}%`,height:"100%",background:r.pct>0.4?C.red:r.pct>0.25?C.gold:C.accent}}/></div><div style={{width:36,textAlign:"right",fontSize:T.caption,fontWeight:700,color:C.text}}>{(r.pct*100).toFixed(0)}%</div></div>))}</div>);
-    return(<Card style={{marginBottom:14}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:10,flexWrap:"wrap",gap:8}}>
-        <CT>Portfolio Intelligence</CT><span style={{fontSize:T.caption,color:C.muted}}>what you're actually exposed to · {holdings.length} positions</span>
-      </div>
-      {flags.length>0&&<div style={{display:"flex",flexDirection:"column",gap:5,marginBottom:12}}>{flags.map((fl,i)=>(<div key={i} style={{fontSize:12,color:fl.level==="high"?C.red:C.gold,background:(fl.level==="high"?C.red:C.gold)+"12",border:`1px solid ${(fl.level==="high"?C.red:C.gold)}30`,borderRadius:5,padding:"6px 10px",lineHeight:1.4}}>⚠ {fl.text}</div>))}</div>}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:10,marginBottom:14}}>
-        {[["Largest position",con.largest?`${con.largest.ticker} ${(con.top1Pct*100).toFixed(0)}%`:"—",con.top1Pct>0.25?C.red:C.text],["Top-3 concentration",`${(con.top3Pct*100).toFixed(0)}%`,con.top3Pct>0.7?C.red:C.gold],["Effective bets",con.effectiveN?con.effectiveN.toFixed(1):"—",con.effectiveN&&con.effectiveN<3?C.red:C.green]].map(([l,v,c])=>(<div key={l} style={{background:C.s2,border:`1px solid ${C.border}`,borderRadius:6,padding:10}}><div style={{fontSize:T.caption,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:3}}>{l}</div><div style={{fontFamily:C.display,fontWeight:800,fontSize:16,color:c}}>{v}</div></div>))}
-      </div>
-      <div style={{display:"flex",gap:18,flexWrap:"wrap",marginBottom:clusters.length?12:0}}>
-        <Bars rows={themes} label="Theme exposure (correlated bets)"/>
-        <Bars rows={sectors} label="Sector exposure"/>
-      </div>
-      {clusters.length>0&&<div style={{borderTop:`1px solid ${C.border}`,paddingTop:8}}><div style={{fontSize:T.caption,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:5}}>Correlation risk <span style={{color:C.dim}}>· theme proxy</span></div>{clusters.map(cl=>(<div key={cl.theme} style={{fontSize:T.caption,color:C.text,marginBottom:3,lineHeight:1.4}}><b style={{color:cl.pct>0.4?C.red:C.gold}}>{cl.tickers.join(" + ")}</b> — {cl.count} names in {cl.theme} = {(cl.pct*100).toFixed(0)}%, effectively one bet</div>))}</div>}
-    </Card>);
-  };
   const Dashboard=()=>(
     <div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:10,marginBottom:14}}>
-        <StatCard label="Portfolio Value" value={holdings.length===0?<Money value={0} currency="INR" decimals={0} size={22} color={C.accent}/>:<Money value={totalVal} currency="USD" decimals={0} size={22} color={C.accent}/>} sub={holdings.length===0?"Add holdings below":<>≈ <Money value={totalVal*84} currency="INR" decimals={0} size={T.caption}/> @ ₹84/$</>} color={C.accent}/>
-        <StatCard label="Total P&L" value={holdings.length===0?"—":<Money value={totalPnL} currency="USD" signed size={22}/>} sub={holdings.length===0?"No positions yet":`${ps(pnlPct)}${f(pnlPct)}%`} color={holdings.length===0?C.muted:pc(totalPnL)}/>
-        <StatCard label="Max Risk/Trade" value="₹100" sub="2% of ₹5,000" color={C.gold}/>
-        <StatCard label="Trades Logged" value={journal.length} sub={`${journal.filter(t=>t.closed).length} closed`} color={C.purple}/>
-      </div>
-      {PortfolioIntel()}
+      <MissionControl holdings={holdings} journal={journal} reviewsMap={reviews} opportunities={opportunities} liveData={liveData} userId={userId} fx={FX} goTab={setTab} onOpenResearch={(o)=>setResearchOpp(o)} onLogTrade={critiqueAndLog}/>
+      <div style={{display:"flex",alignItems:"center",gap:10,margin:"6px 0 12px"}}><div style={{fontFamily:C.display,fontWeight:700,fontSize:T.micro,letterSpacing:"0.16em",textTransform:"uppercase",color:C.muted}}>Manage · Holdings & Watchlist</div><div style={{flex:1,height:1,background:C.border}}/></div>
       <div className="tiq-2col" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
         <Card>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
