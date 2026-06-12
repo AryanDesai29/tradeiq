@@ -34,6 +34,11 @@ const GS2 = `
   @media (prefers-reduced-motion: reduce){
     *,*::before,*::after{animation-duration:0.01ms!important;animation-iteration-count:1!important;transition-duration:0.01ms!important;}
   }
+  @media (max-width: 760px){
+    .c-root{flex-wrap:wrap!important;height:auto!important;overflow-y:auto!important;overflow-x:hidden!important;}
+    .c-chamber{flex:1 1 100%!important;min-width:100%!important;min-height:540px!important;}
+    .c-rail{width:100%!important;flex:1 1 100%!important;max-height:40vh!important;border-left:none!important;border-top:1px solid #26354f!important;}
+  }
 `;
 
 // Seats ring the upper two-thirds of the chamber; the bottom band is reserved
@@ -42,6 +47,9 @@ const SEAT_POS = COUNCIL.map((_, i) => {
   const a = -Math.PI / 2 + (i / COUNCIL.length) * Math.PI * 2;
   return { left: 50 + 40 * Math.cos(a), top: 40 + 24 * Math.sin(a) };
 });
+
+// Relative age for cached sessions — display only.
+const relTime = (ts) => { const m = Math.max(1, Math.round((Date.now() - ts) / 60000)); if (m < 60) return `${m}m ago`; const h = Math.round(m / 60); if (h < 24) return `${h}h ago`; return `${Math.round(h / 24)}d ago`; };
 
 const KIND_TAG = { opening: "OPENS", challenge: "CHALLENGES", response: "RESPONDS", interjection: "INTERJECTS", power: "⚡ POWER", summary: "SUMMARY" };
 const powerQueue = (s) => [
@@ -68,6 +76,7 @@ export default function Council({ theme: C, db, supabaseReady, userId, holdings,
   const [tTicker, setTTicker]     = useState("");
   const [cMode, setCMode]         = useState("quick"); // quick (default) | full (opt-in)
   const [source, setSource]       = useState("live");  // live | cache | cloud
+  const [cachedAt, setCachedAt]   = useState(null);    // display-only: when the replayed session was generated
   const [gavel, setGavel]         = useState(false);   // chairman's gavel strike on verdict
   const [showTreasury, setShowTreasury] = useState(false);
   const [treasuryTick, setTreasuryTick] = useState(0); // bump after each recorded event
@@ -153,13 +162,13 @@ export default function Council({ theme: C, db, supabaseReady, userId, holdings,
     const h = hashTopic({ mode, type: t.type, ticker: t.ticker, title: t.title });
     if (!force) {
       const hit = cacheGet(localStorage, cacheKey, h);
-      if (hit?.session) { record({ mode, cache: "hit" }); playSession(t, hit.session, "cache", true); return; }
+      if (hit?.session) { record({ mode, cache: "hit" }); setCachedAt(hit.at || null); playSession(t, hit.session, "cache", true); return; }
       if (supabaseReady) {
         try {
           const since = new Date(Date.now() - COUNCIL_CACHE_TTL).toISOString();
           const { data: rows } = await db.from("tradeiq_council_sessions").select("session").eq("topic_hash", h).gte("created_at", since).order("created_at", { ascending: false }).limit(1);
           const cloud = rows?.[0]?.session && normalizeSession(rows[0].session, mode);
-          if (cloud) { record({ mode, cache: "hit" }); cachePut(localStorage, cacheKey, h, { topic: t, session: cloud, mode }); playSession(t, cloud, "cloud", true); return; }
+          if (cloud) { record({ mode, cache: "hit" }); setCachedAt(null); cachePut(localStorage, cacheKey, h, { topic: t, session: cloud, mode }); playSession(t, cloud, "cloud", true); return; }
         } catch {}
       }
     }
@@ -172,11 +181,12 @@ export default function Council({ theme: C, db, supabaseReady, userId, holdings,
       const norm = normalizeSession(data.session, mode);
       if (!norm) throw new Error("The council returned an unusable session — convene again.");
       record({ mode, cache: "miss", pin: data.usage?.prompt, pout: data.usage?.completion });
+      setCachedAt(null);
       playSession(t, norm, "live", false);
     } catch (e) { setErr(e.message); setPhase("idle"); }
   };
 
-  const replay = (rec) => { if (!rec?.session) return; setSource("cache"); savedRef.current = rec.session; setTopic(rec.topic); setSession(rec.session); setTurnIdx(0); setVotesShown(0); setPowerIdx(0); setErr(null); setPhase("debate"); };
+  const replay = (rec) => { if (!rec?.session) return; setSource("cache"); setCachedAt(rec.at || null); savedRef.current = rec.session; setTopic(rec.topic); setSession(rec.session); setTurnIdx(0); setVotesShown(0); setPowerIdx(0); setErr(null); setPhase("debate"); };
   const skip = () => { if (phase === "debate") setTurnIdx(session.transcript.length); else if (phase === "powers") setPowerIdx(99); else if (phase === "voting") setVotesShown(session.votes.length); };
 
   const ask = async (memberId, q) => {
@@ -245,9 +255,9 @@ export default function Council({ theme: C, db, supabaseReady, userId, holdings,
           <div style={{ margin: "3px auto 0", width: "max-content", padding: "2.5px 11px", borderRadius: 8, background: "#0d1726e6", border: `1.5px solid ${speaking ? m.color + "75" : C.border}`, boxShadow: "0 3px 8px #0009" }}>
             <span style={{ fontFamily: serif, fontWeight: 700, fontSize: 13, color: speaking ? m.color : C.text }}>{m.name}</span>
           </div>
-          <div style={{ marginTop: 2.5, fontSize: 9, fontWeight: 700, letterSpacing: "0.13em", textTransform: "uppercase", color: observer ? C.muted : m.color + "bb" }}>{observer ? "observing" : m.title.replace("The ", "")}</div>
+          <div style={{ marginTop: 2.5, fontSize: 11, fontWeight: 700, letterSpacing: "0.13em", textTransform: "uppercase", color: observer ? C.muted : m.color + "bb" }}>{observer ? "observing" : m.title.replace("The ", "")}</div>
           {phase === "debate" && !speaking && reactionOf[m.id] && <div key={turnIdx} style={{ position: "absolute", right: -16, top: -20, fontSize: 20, animation: "cReact 2.8s ease forwards", pointerEvents: "none", zIndex: 8, filter: "drop-shadow(0 2px 4px #000)" }}>{reactionOf[m.id]}</div>}
-          {v && <div style={{ marginTop: 3, display: "inline-block", fontSize: 10, fontWeight: 800, letterSpacing: "0.08em", padding: "2.5px 9px", borderRadius: 9, background: VOTE_COLOR[v.vote] + "26", color: VOTE_COLOR[v.vote], border: `1.5px solid ${VOTE_COLOR[v.vote]}66`, animation: "cVote 0.45s ease", fontFamily: C.display, textShadow: "0 1px 4px #000" }}>{v.vote.toUpperCase()}</div>}
+          {v && <div style={{ marginTop: 3, display: "inline-block", fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", padding: "2.5px 9px", borderRadius: 9, background: VOTE_COLOR[v.vote] + "26", color: VOTE_COLOR[v.vote], border: `1.5px solid ${VOTE_COLOR[v.vote]}66`, animation: "cVote 0.45s ease", fontFamily: C.display, textShadow: "0 1px 4px #000" }}>{v.vote.toUpperCase()}</div>}
         </div>
       </div>
     );
@@ -256,7 +266,7 @@ export default function Council({ theme: C, db, supabaseReady, userId, holdings,
   // ── Dialogue zone — a fixed band along the BOTTOM of the chamber (strategy-
   // game dialogue box). Speech, voting status, and the verdict all live here so
   // the table and all ten members stay fully visible at every phase.
-  const zone = { position: "absolute", left: "50%", bottom: 14, transform: "translateX(-50%)", width: "min(680px,96%)", zIndex: 8 };
+  const zone = { position: "absolute", left: "50%", bottom: 14, transform: "translateX(-50%)", width: "min(680px,94%)", zIndex: 8 };
   const CenterStage = () => {
     if (activePower) return null;
     if (phase === "verdict" && session) {
@@ -274,7 +284,12 @@ export default function Council({ theme: C, db, supabaseReady, userId, holdings,
             <div style={{ display: "flex", height: 9, borderRadius: 5, overflow: "hidden", marginBottom: 10, border: `1px solid ${C.border}` }}>
               {session.votes.map((v) => <div key={v.member} style={{ flex: 1, background: VOTE_COLOR[v.vote] }} title={`${memberById(v.member).name}: ${v.vote}`} />)}
             </div>
-            <div style={{ fontSize: 12, color: C.muted, marginBottom: 6 }}>{tally.consensus} · council score {tally.avg >= 0 ? "+" : ""}{tally.avg}</div>
+            <div style={{ fontSize: 11, marginBottom: 5, lineHeight: 1.6 }}>
+              {Object.entries(tally.counts).filter(([, n]) => n > 0).map(([vote, n], i) => (
+                <span key={vote}>{i > 0 && <span style={{ color: C.dim }}> · </span>}<span style={{ color: VOTE_COLOR[vote], fontWeight: 700 }}>{n} {vote}</span></span>
+              ))}
+            </div>
+            <div style={{ fontSize: 12, color: C.muted, marginBottom: 6 }}>{tally.consensus} · council score {tally.avg >= 0 ? "+" : ""}{tally.avg}<span style={{ fontSize: 11, color: C.dim }}> (avg vote, −2 to +2)</span></div>
             {(() => { const co = coalitions(session.votes); return (
               <div style={{ fontSize: 12, marginBottom: 12, lineHeight: 1.7 }}>
                 {co.for.length > 0 && <span style={{ color: "#69f0ae" }}>FOR: <b>{co.for.join(" + ")}</b></span>}
@@ -310,8 +325,8 @@ export default function Council({ theme: C, db, supabaseReady, userId, holdings,
             <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 8 }}>
               <span style={{ fontSize: 22 }}>{m.emoji}</span>
               <span style={{ fontFamily: serif, fontWeight: 700, fontSize: 16, color: m.color }}>{m.name}</span>
-              <span style={{ fontSize: 10, color: C.muted, letterSpacing: "0.14em", textTransform: "uppercase" }}>{m.title}</span>
-              {kd && <span style={{ marginLeft: "auto", fontSize: 9.5, fontWeight: 800, letterSpacing: "0.12em", color: m.color + "bb", border: `1px solid ${m.color}40`, borderRadius: 4, padding: "2px 8px" }}>{kd}</span>}
+              <span style={{ fontSize: 11, color: C.muted, letterSpacing: "0.14em", textTransform: "uppercase" }}>{m.title}</span>
+              {kd && <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 800, letterSpacing: "0.12em", color: m.color + "bb", border: `1px solid ${m.color}40`, borderRadius: 4, padding: "2px 8px" }}>{kd}</span>}
             </div>
             <div style={{ fontSize: 14.5, lineHeight: 1.7, color: C.text, fontFamily: C.mono, minHeight: 48 }}>
               {typed}<span style={{ animation: "cBlink 0.9s infinite", color: m.color }}>▌</span>
@@ -333,11 +348,11 @@ export default function Council({ theme: C, db, supabaseReady, userId, holdings,
 
   // ── Layout ──
   return (
-    <div style={{ display: "flex", height: "100%", minHeight: 480, background: `radial-gradient(120% 90% at 50% 0%, #0c1426 0%, ${C.bg} 55%, #04060a 100%)`, position: "relative", overflow: "hidden" }}>
+    <div className="c-root" style={{ display: "flex", height: "100%", minHeight: 480, background: `radial-gradient(120% 90% at 50% 0%, #0c1426 0%, ${C.bg} 55%, #04060a 100%)`, position: "relative", overflow: "hidden" }}>
       <style>{GS2}</style>
 
       {/* ── CHAMBER ── */}
-      <div style={{ flex: 1, position: "relative", minWidth: 0 }}>
+      <div className="c-chamber" style={{ flex: 1, position: "relative", minWidth: 0 }}>
         {/* cartoon boardroom: paneled wall seams, ceiling spotlight cone, wall seal, floor */}
         <div style={{ position: "absolute", inset: 0, background: `radial-gradient(45% 38% at 50% 44%, ${C.gold}10, transparent 70%)`, pointerEvents: "none" }} />
         <div style={{ position: "absolute", inset: 0, background: "repeating-linear-gradient(90deg, #ffffff06 0 2px, transparent 2px 110px), linear-gradient(180deg, #0d1626 0%, transparent 42%)", pointerEvents: "none" }} />
@@ -352,7 +367,7 @@ export default function Council({ theme: C, db, supabaseReady, userId, holdings,
         {/* header */}
         <div style={{ position: "absolute", top: 12, left: 0, right: 0, textAlign: "center", zIndex: 9, pointerEvents: "none" }}>
           <div style={{ fontFamily: serif, fontWeight: 900, fontSize: 23, letterSpacing: "0.04em", color: C.text }}>🏛️ THE INVESTMENT COUNCIL</div>
-          {topic && phase !== "idle" && <div style={{ fontSize: 12, color: C.muted, marginTop: 3, maxWidth: 640, margin: "3px auto 0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{TOPIC_TYPES.find((x) => x.id === topic.type)?.emoji} {topic.title}{session?.mode === "quick" && <span style={{ color: C.accent, marginLeft: 6 }}>⚡ quick panel</span>}{source !== "live" && <span style={{ color: C.gold, marginLeft: 6 }}>↺ cached · 0 tokens</span>}</div>}
+          {topic && phase !== "idle" && <div style={{ fontSize: 12, color: C.muted, marginTop: 3, maxWidth: 640, margin: "3px auto 0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{TOPIC_TYPES.find((x) => x.id === topic.type)?.emoji} {topic.title}{session?.mode === "quick" && <span style={{ color: C.accent, marginLeft: 6, fontSize: 11, fontWeight: 700 }}>⚡ quick panel · {QUICK_IDS.length} of {COUNCIL.length} voices</span>}{source !== "live" && <span style={{ color: C.gold, marginLeft: 6 }}>↺ cached · 0 tokens{cachedAt && <span style={{ fontSize: 11, color: C.muted }}> · {relTime(cachedAt)}</span>}</span>}</div>}
           {phase === "idle" && <div style={{ fontSize: 12, color: C.muted, marginTop: 3, fontStyle: "italic" }}>Ten minds. One verdict. No capital committed without a debate.</div>}
         </div>
         {(phase === "debate" || phase === "powers" || phase === "voting") && (
@@ -365,7 +380,7 @@ export default function Council({ theme: C, db, supabaseReady, userId, holdings,
           <div style={{ position: "absolute", top: 52, left: 14, zIndex: 13, width: 296, background: `linear-gradient(185deg,${C.s2}fa,${C.s1}fa)`, border: `2px solid ${C.gold}30`, borderRadius: 12, padding: 15, boxShadow: "0 18px 50px #000b", animation: "cBubble 0.25s ease" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
               <span style={{ fontFamily: serif, fontWeight: 900, fontSize: 14.5, color: C.gold }}>🏛 COUNCIL TREASURY</span>
-              <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: "0.1em", padding: "2.5px 9px", borderRadius: 9, background: healthColor + "1c", color: healthColor, border: `1px solid ${healthColor}45` }}>{treasury.h.label.toUpperCase()}</span>
+              <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.1em", padding: "2.5px 9px", borderRadius: 9, background: healthColor + "1c", color: healthColor, border: `1px solid ${healthColor}45` }}>{treasury.h.label.toUpperCase()}</span>
             </div>
             {[["⚡ Quick sessions", treasury.s.quick], ["🏛️ Full sessions", treasury.s.full], ["💬 Member queries", treasury.s.asks],
               ["↺ Cache hits", `${treasury.s.hits}${treasury.s.hits + treasury.s.misses ? ` (${Math.round(treasury.h.hitRate * 100)}%)` : ""}`], ["✦ Fresh debates", treasury.s.misses],
@@ -376,7 +391,7 @@ export default function Council({ theme: C, db, supabaseReady, userId, holdings,
                 <span style={{ color: C.muted }}>{l}</span><span style={{ color: C.text, fontFamily: C.mono, fontWeight: 700 }}>{v}</span>
               </div>
             ))}
-            <div style={{ fontSize: 9.5, color: C.muted, marginTop: 8, lineHeight: 1.55 }}>Last 30 days · real Groq usage when reported · health is measured against your own pattern, not a hardcoded limit{treasury.h.ratio > 0 ? ` (today ≈ ${treasury.h.ratio}× your usual day)` : ""}.</div>
+            <div style={{ fontSize: 11, color: C.muted, marginTop: 8, lineHeight: 1.55 }}>Last 30 days · real Groq usage when reported · health is measured against your own pattern, not a hardcoded limit{treasury.h.ratio > 0 ? ` (today ≈ ${treasury.h.ratio}× your usual day)` : ""}.</div>
           </div>
         )}
 
@@ -400,7 +415,7 @@ export default function Council({ theme: C, db, supabaseReady, userId, holdings,
               <div style={{ fontSize: 34, opacity: 0.85 }}>⚖️</div>
               <div style={{ fontFamily: serif, fontWeight: 700, fontSize: 15, color: C.gold + "cc", marginTop: 5, letterSpacing: "0.12em" }}>SESSION NOT IN PROGRESS</div>
               <div style={{ fontSize: 11.5, color: C.muted, marginTop: 4, maxWidth: 300 }}>Bring an opportunity, trade, position, or thesis before the council below.</div>
-              {cMode === "quick" && <div style={{ fontSize: 10.5, color: C.accent + "bb", marginTop: 6 }}>⚡ Quick panel: Sterling · Veris · Sigma · Popper</div>}
+              {cMode === "quick" && <div style={{ fontSize: 11, color: C.accent + "bb", marginTop: 6 }}>⚡ Quick panel: Sterling · Veris · Sigma · Popper</div>}
             </div>
           )}
           {busy && (
@@ -433,19 +448,19 @@ export default function Council({ theme: C, db, supabaseReady, userId, holdings,
             {err && <div style={{ background: C.red + "15", border: `1px solid ${C.red}40`, borderRadius: 8, padding: "9px 13px", fontSize: 12.5, color: C.red, marginBottom: 8 }}>⚠️ {err}</div>}
             {suggestions.length > 0 && (
               <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 9, justifyContent: "center" }}>
-                {suggestions.map((s, i) => <button key={i} className="tiq-btn" onClick={() => convene(s.t)} style={{ background: C.s2 + "ee", border: `1px solid ${C.accent}30`, borderRadius: 16, color: C.accent, fontFamily: C.mono, fontSize: 11, padding: "7px 14px" }}>{s.e} {s.l}</button>)}
-                {lastSaved && <button className="tiq-btn" onClick={() => replay(lastSaved)} style={{ background: C.s2 + "ee", border: `1px solid ${C.border}`, borderRadius: 16, color: C.muted, fontFamily: C.mono, fontSize: 11, padding: "7px 14px" }}>↺ Replay last session</button>}
+                {suggestions.map((s, i) => <button key={i} className="tiq-btn" onClick={() => convene(s.t)} style={{ background: C.s2 + "ee", border: `1px solid ${C.accent}30`, borderRadius: 20, color: C.accent, fontFamily: C.mono, fontSize: 11, padding: "13px 14px" }}>{s.e} {s.l}</button>)}
+                {lastSaved && <button className="tiq-btn" onClick={() => replay(lastSaved)} style={{ background: C.s2 + "ee", border: `1px solid ${C.border}`, borderRadius: 20, color: C.muted, fontFamily: C.mono, fontSize: 11, padding: "13px 14px" }}>↺ Replay last session</button>}
               </div>
             )}
             <div style={{ background: C.s1 + "f2", border: `1px solid ${C.border}`, borderRadius: 13, padding: 14, boxShadow: "0 14px 44px #000a" }}>
               <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
                 {COUNCIL_MODES.map((md) => <button key={md.id} className="tiq-btn" onClick={() => setCMode(md.id)} style={{ flex: 1, textAlign: "left", background: cMode === md.id ? (md.id === "quick" ? C.accent : C.gold) + "16" : "transparent", border: `1.5px solid ${cMode === md.id ? (md.id === "quick" ? C.accent : C.gold) + "60" : C.border}`, borderRadius: 9, padding: "9px 13px" }}>
-                  <div style={{ fontFamily: C.display, fontWeight: 800, fontSize: 12, letterSpacing: "0.06em", textTransform: "uppercase", color: cMode === md.id ? (md.id === "quick" ? C.accent : C.gold) : C.muted }}>{md.emoji} {md.label}{md.id === "quick" && <span style={{ fontSize: 9, marginLeft: 5, opacity: 0.8 }}>DEFAULT</span>}</div>
-                  <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>{md.hint}</div>
+                  <div style={{ fontFamily: C.display, fontWeight: 800, fontSize: 12, letterSpacing: "0.06em", textTransform: "uppercase", color: cMode === md.id ? (md.id === "quick" ? C.accent : C.gold) : C.muted }}>{md.emoji} {md.label}{md.id === "quick" && <span style={{ fontSize: 11, marginLeft: 5, opacity: 0.8 }}>DEFAULT</span>}</div>
+                  <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{md.hint}</div>
                 </button>)}
               </div>
               <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
-                {TOPIC_TYPES.map((t) => <button key={t.id} className="tiq-btn" onClick={() => setTType(t.id)} title={t.hint} style={{ background: tType === t.id ? C.accent + "1f" : "transparent", border: `1px solid ${tType === t.id ? C.accent + "60" : C.border}`, borderRadius: 7, color: tType === t.id ? C.accent : C.muted, fontFamily: C.display, fontWeight: 700, fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", padding: "7px 11px" }}>{t.emoji} {t.label}</button>)}
+                {TOPIC_TYPES.map((t) => <button key={t.id} className="tiq-btn" onClick={() => setTType(t.id)} title={t.hint} style={{ background: tType === t.id ? C.accent + "1f" : "transparent", border: `1px solid ${tType === t.id ? C.accent + "60" : C.border}`, borderRadius: 7, color: tType === t.id ? C.accent : C.muted, fontFamily: C.display, fontWeight: 700, fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", padding: "13px 12px" }}>{t.emoji} {t.label}</button>)}
               </div>
               <div style={{ display: "flex", gap: 8 }}>
                 <input className="tiq-input" value={tTicker} onChange={(e) => setTTicker(e.target.value.toUpperCase())} placeholder="TICKER" style={{ width: 106, background: C.s2, border: `1px solid ${C.border}`, borderRadius: 8, padding: "11px 12px", color: C.text, fontFamily: C.mono, fontSize: 12.5 }} />
@@ -458,16 +473,16 @@ export default function Council({ theme: C, db, supabaseReady, userId, holdings,
       </div>
 
       {/* ── MINUTES RAIL ── */}
-      <div style={{ width: 362, flexShrink: 0, borderLeft: `1px solid ${C.border}`, background: C.s1 + "c8", display: "flex", flexDirection: "column", backdropFilter: "blur(4px)" }}>
+      <div className="c-rail" style={{ width: 362, flexShrink: 0, borderLeft: `1px solid ${C.border}`, background: C.s1 + "c8", display: "flex", flexDirection: "column", backdropFilter: "blur(4px)" }}>
         <div style={{ padding: "13px 16px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span style={{ fontFamily: serif, fontWeight: 700, fontSize: 13, letterSpacing: "0.14em", color: C.muted }}>MINUTES OF THE MEETING</span>
-          {session && <span style={{ fontSize: 10.5, color: C.muted }}>{playedTurns.length}/{session.transcript.length}</span>}
+          {session && <span style={{ fontSize: 11, color: C.muted }}>{playedTurns.length}/{session.transcript.length}</span>}
         </div>
         <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px" }}>
           {!session && <div style={{ color: C.muted, fontSize: 12.5, lineHeight: 1.7, padding: "16px 4px", textAlign: "center" }}>The live transcript, ballots, and verdict will be recorded here once the council convenes.<div style={{ marginTop: 16, fontSize: 11.5, lineHeight: 2.1, textAlign: "left" }}>{COUNCIL.map((m) => <div key={m.id} style={{ cursor: "pointer" }} onClick={() => setDossier(m.id)}><span style={{ color: m.color, fontWeight: 700 }}>{m.emoji} {m.name}</span> <span style={{ color: C.dim }}>· {m.title}</span></div>)}</div></div>}
           {playedTurns.map((t, i) => (
             <div key={i} className="msg-in" style={{ marginBottom: 11, paddingLeft: 9, borderLeft: `2px solid ${memberById(t.member).color}50` }}>
-              <div style={{ fontSize: 11.5 }}><MChip id={t.member} />{KIND_TAG[kindOf(t, i, session.transcript)] && <span style={{ color: C.muted, marginLeft: 6, fontSize: 8.5, letterSpacing: "0.1em" }}>{KIND_TAG[kindOf(t, i, session.transcript)]}</span>}</div>
+              <div style={{ fontSize: 11.5 }}><MChip id={t.member} />{KIND_TAG[kindOf(t, i, session.transcript)] && <span style={{ color: C.muted, marginLeft: 6, fontSize: 11, letterSpacing: "0.1em" }}>{KIND_TAG[kindOf(t, i, session.transcript)]}</span>}</div>
               <div style={{ fontSize: 12.5, color: C.text, lineHeight: 1.6, marginTop: 3 }}>{t.text}</div>
             </div>
           ))}
@@ -493,9 +508,9 @@ export default function Council({ theme: C, db, supabaseReady, userId, holdings,
               <div style={{ fontSize: 44, lineHeight: 1, filter: `drop-shadow(0 4px 8px #000b) drop-shadow(0 0 14px ${m.color}45)`, animation: "cBob 3.4s ease-in-out infinite" }}>{m.emoji}</div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontFamily: serif, fontWeight: 900, fontSize: 21, color: m.color }}>{m.name}</div>
-                <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.18em", textTransform: "uppercase", color: C.muted }}>{m.title}</div>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.18em", textTransform: "uppercase", color: C.muted }}>{m.title}</div>
               </div>
-              <button className="tiq-btn" onClick={() => setDossier(null)} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 7, color: C.muted, fontSize: 13, padding: "5px 11px" }}>✕</button>
+              <button className="tiq-btn" onClick={() => setDossier(null)} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 7, color: C.muted, fontSize: 13, padding: "12px 14px" }}>✕</button>
             </div>
             {v && <div style={{ marginTop: 11, padding: "8px 12px", borderRadius: 8, background: VOTE_COLOR[v.vote] + "14", border: `1px solid ${VOTE_COLOR[v.vote]}40`, fontSize: 12, lineHeight: 1.55 }}><b style={{ color: VOTE_COLOR[v.vote] }}>{v.vote}</b> <span style={{ color: C.muted }}>· {v.confidence}% —</span> <span style={{ color: C.text }}>{v.reason}</span></div>}
           </div>
@@ -504,11 +519,11 @@ export default function Council({ theme: C, db, supabaseReady, userId, holdings,
             <div style={{ fontSize: 11.5, color: C.muted, lineHeight: 1.65, marginBottom: 10 }}>{m.focus}</div>
             {m.power && <div style={{ fontSize: 11.5, color: m.color, background: m.color + "10", border: `1px solid ${m.color}30`, borderRadius: 8, padding: "8px 11px", marginBottom: 11, lineHeight: 1.55 }}>⚡ {m.power}</div>}
             {memories[m.id] && <div style={{ background: C.s2, border: `1px dashed ${m.color}38`, borderRadius: 8, padding: "9px 12px", marginBottom: 12 }}>
-              <div style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: "0.16em", color: m.color, marginBottom: 4 }}>{m.name.toUpperCase()}'S READ ON YOU</div>
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.16em", color: m.color, marginBottom: 4 }}>{m.name.toUpperCase()}'S READ ON YOU</div>
               <div style={{ fontSize: 11.5, color: C.text, lineHeight: 1.65 }}>{memories[m.id]}</div>
             </div>}
             <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
-              {m.questions.map((q) => <button key={q} className="tiq-btn" disabled={askBusy} onClick={() => ask(m.id, q)} style={{ textAlign: "left", background: C.s3, border: `1px solid ${C.border}`, borderRadius: 8, color: C.accent, fontFamily: C.mono, fontSize: 11.5, padding: "8px 12px" }}>❝ {q} ❞</button>)}
+              {m.questions.map((q) => <button key={q} className="tiq-btn" disabled={askBusy} onClick={() => ask(m.id, q)} style={{ textAlign: "left", background: C.s3, border: `1px solid ${C.border}`, borderRadius: 8, color: C.accent, fontFamily: C.mono, fontSize: 11.5, padding: "13px 12px" }}>❝ {q} ❞</button>)}
             </div>
             {th.map((x, i) => (
               <div key={i} style={{ marginBottom: 12 }}>

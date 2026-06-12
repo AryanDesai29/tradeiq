@@ -1,4 +1,6 @@
 import { personalAlpha, mistakeCost, confidenceOf, dataQuality } from "./alpha.js";
+import { T } from "./theme.js";
+import { Term } from "./ui.jsx";
 
 // ─── PERSONAL ALPHA (P2.5) — "what conditions make / lose you money" ──────────
 // Pure presentation over src/alpha.js. Edges (+R) are green, leaks (−R) red;
@@ -24,16 +26,16 @@ export default function PersonalAlpha({ journal = [], reviews = [], theme }) {
   const covColor = (p) => (p >= 70 ? C.green : p >= 40 ? C.gold : C.red);
   const Coverage = () => (
     <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
-      <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: C.muted, marginBottom: 8 }}>Data Quality <span style={{ color: C.dim }}>· {dq.closed} closed trades</span></div>
+      <div style={{ fontSize: T.micro, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: C.muted, marginBottom: 8 }}>Data Quality <span style={{ color: C.dim }}>· {dq.closed} closed trades</span></div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 8 }}>
         {[["Stop set (valid R)", dq.withRisk], ["Reviewed", dq.reviews], ["Sector", dq.sector], ["Holding period", dq.holding]].map(([label, c]) => (
           <div key={label} style={{ background: C.s2, border: `1px solid ${C.border}`, borderRadius: 6, padding: "8px 10px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 5 }}>
-              <span style={{ fontSize: 10, color: C.text }}>{label}</span>
+              <span style={{ fontSize: T.caption, color: C.text }}>{label}</span>
               <span style={{ fontFamily: C.display, fontWeight: 700, fontSize: 12, color: covColor(c.pct) }}>{c.pct}%</span>
             </div>
             <div style={{ height: 4, background: C.border, borderRadius: 2, overflow: "hidden" }}><div style={{ height: "100%", width: `${c.pct}%`, background: covColor(c.pct) }} /></div>
-            <div style={{ fontSize: 8, color: C.muted, marginTop: 3 }}>{c.n}/{dq.closed} trades</div>
+            <div style={{ fontSize: T.caption, color: C.muted, marginTop: 3 }}>{c.n}/{dq.closed} trades</div>
           </div>
         ))}
       </div>
@@ -57,12 +59,12 @@ export default function PersonalAlpha({ journal = [], reviews = [], theme }) {
   // Shared shell for the two headline cards.
   const Card = ({ label, color, children }) => (
     <div style={{ flex: 1, minWidth: 230, background: C.s2, border: `1px solid ${C.border}`, borderLeft: `3px solid ${color}`, borderRadius: 7, padding: 14 }}>
-      <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: C.muted, marginBottom: 6 }}>{label}</div>
+      <div style={{ fontSize: T.caption, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: C.muted, marginBottom: 6 }}>{label}</div>
       {children}
     </div>
   );
   const ConfTag = ({ n }) => { const c = confidenceOf(n); return (
-    <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.06em", color: tierColor[c.tier], border: `1px solid ${tierColor[c.tier]}55`, borderRadius: 4, padding: "1px 5px" }}>{c.label.toUpperCase()}</span>
+    <span style={{ fontSize: T.micro, fontWeight: 700, letterSpacing: "0.06em", color: tierColor[c.tier], border: `1px solid ${tierColor[c.tier]}55`, borderRadius: 4, padding: "1px 5px" }}>{c.label.toUpperCase()}</span>
   ); };
 
   // Your Current Edge — the single highest-expectancy confident condition.
@@ -70,10 +72,10 @@ export default function PersonalAlpha({ journal = [], reviews = [], theme }) {
     <Card label="Your current edge" color={C.green}>
       {a.bestEdge ? (<>
         <div style={{ fontFamily: C.display, fontSize: 18, fontWeight: 800, color: C.text, lineHeight: 1.15 }}>{a.bestEdge.key}</div>
-        <div style={{ fontSize: 10, color: C.muted, marginBottom: 6 }}>{a.bestEdge.dimension}</div>
+        <div style={{ fontSize: T.caption, color: C.muted, marginBottom: 6 }}>{a.bestEdge.dimension}</div>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
           <span style={{ fontFamily: C.display, fontSize: 22, fontWeight: 800, color: C.green }}>{r1(a.bestEdge.expectancyR)}</span>
-          <span style={{ fontSize: 10, color: C.muted }}>{pct(a.bestEdge.winRate)} win · {a.bestEdge.withRisk} trades</span>
+          <span style={{ fontSize: T.caption, color: C.muted }}>{pct(a.bestEdge.winRate)} win · {a.bestEdge.withRisk} trades</span>
           <ConfTag n={a.bestEdge.withRisk} />
         </div>
       </>) : <div style={{ fontSize: 12, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>No condition has hit {a.minSample} trades yet — keep logging.</div>}
@@ -86,17 +88,17 @@ export default function PersonalAlpha({ journal = [], reviews = [], theme }) {
     <Card label="Your biggest leak" color={C.red}>
       {topMistake ? (<>
         <div style={{ fontFamily: C.display, fontSize: 18, fontWeight: 800, color: C.text, lineHeight: 1.15 }}>{topMistake.label}</div>
-        <div style={{ fontSize: 10, color: C.muted, marginBottom: 6 }}>recurring mistake · {topMistake.count}× across reviews</div>
+        <div style={{ fontSize: T.caption, color: C.muted, marginBottom: 6 }}>recurring mistake · {topMistake.count}× across reviews</div>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
           <span style={{ fontFamily: C.display, fontSize: 22, fontWeight: 800, color: C.red }}>{r1(topMistake.avgR)}</span>
-          <span style={{ fontSize: 10, color: C.muted }}>avg · {r1(topMistake.totalR)} total · {topMistake.withRisk} trades</span>
+          <span style={{ fontSize: T.caption, color: C.muted }}>avg · {r1(topMistake.totalR)} total · {topMistake.withRisk} trades</span>
         </div>
       </>) : a.worstLeak ? (<>
         <div style={{ fontFamily: C.display, fontSize: 18, fontWeight: 800, color: C.text, lineHeight: 1.15 }}>{a.worstLeak.key}</div>
-        <div style={{ fontSize: 10, color: C.muted, marginBottom: 6 }}>{a.worstLeak.dimension}</div>
+        <div style={{ fontSize: T.caption, color: C.muted, marginBottom: 6 }}>{a.worstLeak.dimension}</div>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
           <span style={{ fontFamily: C.display, fontSize: 22, fontWeight: 800, color: C.red }}>{r1(a.worstLeak.expectancyR)}</span>
-          <span style={{ fontSize: 10, color: C.muted }}>{pct(a.worstLeak.winRate)} win · {a.worstLeak.withRisk} trades</span>
+          <span style={{ fontSize: T.caption, color: C.muted }}>{pct(a.worstLeak.winRate)} win · {a.worstLeak.withRisk} trades</span>
           <ConfTag n={a.worstLeak.withRisk} />
         </div>
       </>) : <div style={{ fontSize: 12, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>No costed leak yet — review a few closed trades to surface mistakes.</div>}
@@ -109,8 +111,8 @@ export default function PersonalAlpha({ journal = [], reviews = [], theme }) {
   return (
     <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 8, padding: 16, marginBottom: 14 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-        <div style={{ fontFamily: C.display, fontWeight: 800, fontSize: 14 }}>Personal Alpha <span style={{ fontSize: 10, fontWeight: 400, color: C.dim }}>· what makes you money</span></div>
-        <div style={{ fontSize: 10, color: C.muted }}>expectancy in R · ≥{a.minSample} trades = confident</div>
+        <div style={{ fontFamily: C.display, fontWeight: 800, fontSize: 14 }}>Personal Alpha <span style={{ fontSize: T.caption, fontWeight: 400, color: C.dim }}>· what makes you money</span></div>
+        <div style={{ fontSize: T.caption, color: C.muted }}><Term k="expectancy">expectancy</Term> in <Term k="r">R</Term> · ≥{a.minSample} trades = confident</div>
       </div>
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
@@ -134,14 +136,14 @@ export default function PersonalAlpha({ journal = [], reviews = [], theme }) {
                     <div style={{ height: 6, width: w, minWidth: 3, background: col, borderRadius: 3 }} />
                   </div>
                   <div style={{ fontFamily: C.display, fontWeight: 700, fontSize: 12, color: col, width: 56, textAlign: "right" }}>{r1(g.expectancyR)}</div>
-                  <div style={{ fontSize: 9, color: C.muted, width: 104, textAlign: "right" }}>{pct(g.winRate)} · {g.withRisk}t · {confident ? confidenceOf(g.withRisk).short : "building"}</div>
+                  <div style={{ fontSize: T.caption, color: C.muted, width: 118, textAlign: "right" }}>{pct(g.winRate)} · {g.withRisk}t · {confident ? confidenceOf(g.withRisk).short : "building"}</div>
                 </div>
               );
             })}
           </div>
         </div>
       ))}
-      <div style={{ fontSize: 9, color: C.dim, marginTop: 4, lineHeight: 1.5 }}>
+      <div style={{ fontSize: T.caption, color: C.dim, marginTop: 4, lineHeight: 1.5 }}>
         Expectancy uses only closed trades with a stop (valid R), grouped by objective fills. Dimmed rows haven't hit {a.minSample} trades yet. Holding-period covers trades closed since the feature shipped. Regime is intentionally excluded until a real regime engine exists.
       </div>
       <Coverage />
