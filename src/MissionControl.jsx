@@ -4,10 +4,11 @@
 // All data is derived client-side in mission.js (zero tokens, always live).
 // Holdings/watchlist MANAGEMENT stays in App.jsx below this component.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { C, T } from "./theme.js";
 import { TickerID, Money, Term } from "./ui.jsx";
 import { coalitions } from "./council.js";
+import { track, usageSummary } from "./telemetry.js";
 import {
   openPositions, thesisHealth, HEALTH_LABEL, actionQueue, featuredOpportunity,
   biggestRisk, missionBriefing, iqSnapshot, alphaSnapshot, learningLoop,
@@ -42,6 +43,10 @@ const Kv = ({ label, children, color = C.text }) => (
 
 export default function MissionControl({ holdings = [], journal = [], reviewsMap = {}, opportunities = [], liveData = {}, userId, fx = { USD: 1, INR: 1 / 84 }, goTab, onOpenResearch, onLogTrade }) {
   const [showExposure, setShowExposure] = useState(false);
+  // Local-only usage instrumentation (see telemetry.js). `hit` then act.
+  const hit = (key) => track(localStorage, userId, key);
+  const go = (key, tab) => { hit(key); goTab(tab); };
+  useEffect(() => { window.tiqUsage = () => usageSummary(localStorage, userId); return () => { delete window.tiqUsage; }; }, [userId]);
   const reviews = useMemo(() => Object.values(reviewsMap), [reviewsMap]);
   const liveOf = (tk) => liveData[tk]?.price ?? null;
   const pfItems = useMemo(() => holdings.map((h) => ({ ticker: h.ticker, sector: h.sector, value: (+h.shares || 0) * (+h.price || 0) * (fx[h.currency] || 1) })), [holdings, fx]);
@@ -85,7 +90,7 @@ export default function MissionControl({ holdings = [], journal = [], reviewsMap
 
       {/* ── ROW B: COMMAND CENTER + BIGGEST RISK ─────────────────── */}
       <div className="mc-b">
-        <Panel title="Portfolio Command Center" right={holdings.length > 0 && <button onClick={() => setShowExposure((s) => !s)} style={{ background: "none", border: "none", color: C.muted, fontSize: T.caption, cursor: "pointer", fontFamily: C.mono }}>{showExposure ? "hide exposure ▴" : "exposure detail ▾"}</button>}>
+        <Panel title="Portfolio Command Center" right={holdings.length > 0 && <button onClick={() => setShowExposure((s) => { if (!s) hit("command.exposure"); return !s; })} style={{ background: "none", border: "none", color: C.muted, fontSize: T.caption, cursor: "pointer", fontFamily: C.mono }}>{showExposure ? "hide exposure ▴" : "exposure detail ▾"}</button>}>
           {holdings.length === 0 ? <Empty>No holdings yet — add positions in the Manage section below to power the command center.</Empty> : (
             <>
               <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
@@ -122,7 +127,7 @@ export default function MissionControl({ holdings = [], journal = [], reviewsMap
             <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: 1 }}>
               <div style={{ fontFamily: C.display, fontWeight: 800, fontSize: 19, lineHeight: 1.25, color: risk.severity >= 3 ? C.red : C.gold }}>{risk.headline}</div>
               <div style={{ fontSize: T.data, color: C.muted, lineHeight: 1.55, flex: 1 }}>{risk.detail}</div>
-              <div><GoBtn color={risk.severity >= 3 ? C.red : C.gold} onClick={() => goTab(risk.tab)}>Inspect →</GoBtn></div>
+              <div><GoBtn color={risk.severity >= 3 ? C.red : C.gold} onClick={() => go("risk.inspect", risk.tab)}>Inspect →</GoBtn></div>
             </div>
           )}
         </Panel>
@@ -134,7 +139,7 @@ export default function MissionControl({ holdings = [], journal = [], reviewsMap
           {queue.length === 0 ? <Empty>Queue clear. Nothing is waiting on you.</Empty> : (
             <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
               {queue.slice(0, 5).map((it) => (
-                <button key={it.id} className="tiq-btn" onClick={() => goTab(it.tab)} style={{ display: "flex", alignItems: "center", gap: 10, textAlign: "left", background: C.s2, border: `1px solid ${SEV_COLOR[it.severity]}30`, borderLeft: `3px solid ${SEV_COLOR[it.severity]}`, borderRadius: 7, padding: "9px 12px", cursor: "pointer", color: C.text }}>
+                <button key={it.id} className="tiq-btn" onClick={() => go(`action.${it.id}`, it.tab)} style={{ display: "flex", alignItems: "center", gap: 10, textAlign: "left", background: C.s2, border: `1px solid ${SEV_COLOR[it.severity]}30`, borderLeft: `3px solid ${SEV_COLOR[it.severity]}`, borderRadius: 7, padding: "9px 12px", cursor: "pointer", color: C.text }}>
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ fontSize: T.data, fontWeight: 700, lineHeight: 1.3 }}>{it.label}</div>
                     {it.detail && <div style={{ fontSize: T.caption, color: C.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.detail}</div>}
@@ -163,9 +168,9 @@ export default function MissionControl({ holdings = [], journal = [], reviewsMap
               </div>
               {opp.invalidation && <div style={{ fontSize: T.caption, color: C.red, lineHeight: 1.5 }}><b>Kills it:</b> {opp.invalidation}</div>}
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
-                <GoBtn color={C.accent} onClick={() => goTab("council")}>Open Council</GoBtn>
-                <GoBtn color={C.purple} onClick={() => onOpenResearch(opp)}>Open Research</GoBtn>
-                <GoBtn color={C.green} onClick={() => onLogTrade(opp)}>Log Trade →</GoBtn>
+                <GoBtn color={C.accent} onClick={() => go("opp.openCouncil", "council")}>Open Council</GoBtn>
+                <GoBtn color={C.purple} onClick={() => { hit("opp.openResearch"); onOpenResearch(opp); }}>Open Research</GoBtn>
+                <GoBtn color={C.green} onClick={() => { hit("opp.logTrade"); onLogTrade(opp); }}>Log Trade →</GoBtn>
               </div>
             </div>
           )}
@@ -210,7 +215,7 @@ export default function MissionControl({ holdings = [], journal = [], reviewsMap
 
       {/* ── ROW E: IQ + ALPHA + COUNCIL ──────────────────────────── */}
       <div className="mc-3">
-        <Panel title={<Term k="investorIq">Investor IQ</Term>} right={<button onClick={() => goTab("perf")} style={{ background: "none", border: "none", color: C.muted, fontSize: T.caption, cursor: "pointer", fontFamily: C.mono }}>full analytics →</button>}>
+        <Panel title={<Term k="investorIq">Investor IQ</Term>} right={<button onClick={() => go("iq.drill", "perf")} style={{ background: "none", border: "none", color: C.muted, fontSize: T.caption, cursor: "pointer", fontFamily: C.mono }}>full analytics →</button>}>
           {iq.n === 0 ? <Empty>Builds after your first reviewed trade. Close a trade, generate its AI review, and your IQ profile starts here.</Empty> : (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <Kv label={<Term k="thesisAccuracy">Thesis accuracy</Term>} color={iq.thesisAccuracy >= 0.6 ? C.green : iq.thesisAccuracy >= 0.4 ? C.gold : C.red}>{pct(iq.thesisAccuracy)}</Kv>
@@ -221,7 +226,7 @@ export default function MissionControl({ holdings = [], journal = [], reviewsMap
           )}
         </Panel>
 
-        <Panel title="Personal Alpha" right={<button onClick={() => goTab("perf")} style={{ background: "none", border: "none", color: C.muted, fontSize: T.caption, cursor: "pointer", fontFamily: C.mono }}>full breakdown →</button>}>
+        <Panel title="Personal Alpha" right={<button onClick={() => go("alpha.drill", "perf")} style={{ background: "none", border: "none", color: C.muted, fontSize: T.caption, cursor: "pointer", fontFamily: C.mono }}>full breakdown →</button>}>
           {!alpha.bestEdge && !alpha.worstLeak ? <Empty>Needs ≥5 closed trades per condition. Your edges and leaks will surface here as the sample builds ({alpha.closed} closed so far).</Empty> : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {alpha.bestEdge && <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}><span style={{ fontSize: T.data, color: C.text }}>Best edge · <b>{alpha.bestEdge.key}</b></span><span style={{ fontFamily: C.mono, fontWeight: 700, color: C.green }}>+{alpha.bestEdge.expectancyR.toFixed(2)}R</span></div>}
@@ -233,7 +238,7 @@ export default function MissionControl({ holdings = [], journal = [], reviewsMap
           )}
         </Panel>
 
-        <Panel title="Council Briefing" right={<GoBtn onClick={() => goTab("council")}>Open Council</GoBtn>}>
+        <Panel title="Council Briefing" right={<GoBtn onClick={() => go("council.open", "council")}>Open Council</GoBtn>}>
           {!council ? <Empty>No council session yet. Convene the council on any ticker or portfolio question.</Empty> : (() => {
             const v = council.session.verdict; const co = coalitions(council.session.votes || []);
             const vc = v.recommendation?.includes("Buy") ? C.green : v.recommendation?.includes("Avoid") ? C.red : C.gold;
