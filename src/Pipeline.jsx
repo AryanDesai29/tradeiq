@@ -113,6 +113,15 @@ export default function OpportunityPipeline({ opportunities = [], liveData = {},
 
   return (
     <div>
+      <style>{`
+        .pipe-board{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(265px,1fr);gap:12px;overflow-x:auto;-webkit-overflow-scrolling:touch;align-items:start;padding-bottom:6px;scroll-snap-type:x proximity;}
+        .pipe-board>section{scroll-snap-align:start;}
+        @media(max-width:700px){
+          /* phones: the board stacks — a 5-column sideways scroll is unusable one-handed */
+          .pipe-board{grid-auto-flow:row;grid-auto-columns:unset;grid-template-columns:1fr;overflow-x:visible;}
+          .pipe-empty-hint{display:none;}
+        }
+      `}</style>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6, flexWrap: "wrap", gap: 8 }}>
         <div>
           <div style={{ fontFamily: C.display, fontWeight: 800, fontSize: 17 }}>Opportunity Pipeline</div>
@@ -122,22 +131,22 @@ export default function OpportunityPipeline({ opportunities = [], liveData = {},
       </div>
       <div style={{ fontSize: T.caption, color: C.gold, marginBottom: 12, lineHeight: 1.5 }}>⚠️ AI research separates fact from assumption from unknown — it has no filings. Unknowns stay unknowns; verify the primary sources before acting.</div>
 
-      <div style={{ display: "grid", gridAutoFlow: "column", gridAutoColumns: "minmax(265px,1fr)", gap: 12, overflowX: "auto", alignItems: "start", paddingBottom: 6 }}>
+      <div className="pipe-board">
         {main.map((col) => (
-          <div key={col} style={{ background: C.s1, border: `1px solid ${C.border}`, borderTop: `2px solid ${COL_TONE[col]}`, borderRadius: 10, padding: 10, minWidth: 0 }}>
+          <section key={col} style={{ background: C.s1, border: `1px solid ${C.border}`, borderTop: `2px solid ${COL_TONE[col]}`, borderRadius: 10, padding: 10, minWidth: 0 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
               <span style={{ fontFamily: C.display, fontWeight: 700, fontSize: T.micro, letterSpacing: "0.14em", textTransform: "uppercase", color: COL_TONE[col] }}>{STATE_LABEL[col]}</span>
               <span style={{ fontSize: T.caption, color: C.dim, fontFamily: C.mono }}>{cols[col].length}</span>
             </div>
             {cols[col].length === 0
-              ? <div style={{ fontSize: T.caption, color: C.dim, lineHeight: 1.6, padding: "8px 2px" }}>{col === "discovered" ? "Hit Discover — the AI scans your watchlist for expectation gaps." : col === "researching" ? "Start research on a discovered idea." : col === "council_review" ? "Researched ideas await the Council here." : "Council-approved ideas land here for your decision."}</div>
+              ? <div className="pipe-empty-hint" style={{ fontSize: T.caption, color: C.dim, lineHeight: 1.6, padding: "8px 2px" }}>{col === "discovered" ? "Hit Discover — the AI scans your watchlist for expectation gaps." : col === "researching" ? "Start research on a discovered idea." : col === "council_review" ? "Researched ideas await the Council here." : "Council-approved ideas land here for your decision."}</div>
               : cols[col].map(({ opp, scores }) => (
                 <div key={opp.id} style={{ marginBottom: 9 }}>
                   <Card opp={opp} scores={scores} live={liveData[opp.ticker]} busy={researchingId === opp.id}
                     onResearch={onResearch} onOpenWorkspace={onOpenWorkspace} onCouncil={onCouncil} onLog={onLog} onMove={onMove} />
                 </div>
               ))}
-          </div>
+          </section>
         ))}
       </div>
 

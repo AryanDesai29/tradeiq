@@ -53,7 +53,8 @@ const REPORT = join(HERE, "..", "docs", "VALIDATION-REPORT.md");
 try {
   for (const line of readFileSync(join(HERE, "..", ".env"), "utf8").split("\n")) {
     const m = line.match(/^([A-Z_]+)=(.*)$/);
-    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim();
+    // vercel env pull quotes values — strip one pair of surrounding quotes.
+    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim().replace(/^(['"])(.*)\1$/, "$2");
   }
 } catch {}
 const GROQ_KEY = process.env.GROQ_API_KEY || null;

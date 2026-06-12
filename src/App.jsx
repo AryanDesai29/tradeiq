@@ -102,6 +102,40 @@ const GS = `
   .tiq-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%;}
   .tiq-scroll table{min-width:560px;}
   @media(max-width:600px){.tiq-scroll table{min-width:520px;}}
+  /* ── MOBILE PASS ──────────────────────────────────────────────── */
+  html{-webkit-text-size-adjust:100%;}
+  .tiq-tabs{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;scroll-snap-type:x proximity;}
+  .tiq-tabs::-webkit-scrollbar{display:none;}
+  .tiq-tab{scroll-snap-align:start;}
+  /* Full-bleed sections (council, chart) cancel the main padding — the negative
+     margin must track the responsive padding below or phones get sideways scroll. */
+  .tiq-bleed{margin:-18px;}
+  .tiq-fit-full{height:calc(100dvh - 140px);}
+  .tiq-fit-chat{height:calc(100dvh - 175px);}
+  /* Bottom navigation — phones only; desktop keeps the tab strip. */
+  .tiq-bottomnav{display:none;}
+  .tiq-bn-item{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:none;border:none;border-radius:10px;color:${C.muted};cursor:pointer;padding:5px 2px;min-height:50px;}
+  .tiq-bn-item.on{color:${C.accent};background:${C.accent}14;}
+  .tiq-bn-ico{font-size:19px;line-height:1;}
+  .tiq-bn-lbl{font-family:${C.display};font-weight:700;font-size:10px;letter-spacing:0.04em;}
+  @media(max-width:700px){
+    .tiq-main{padding:12px 10px calc(86px + env(safe-area-inset-bottom))!important;}
+    .tiq-bleed{margin:-12px -10px;}
+    .tiq-head{padding:8px max(10px,env(safe-area-inset-right)) 8px max(10px,env(safe-area-inset-left))!important;}
+    .tiq-tabs{display:none!important;}
+    .tiq-hide-sm{display:none!important;}
+    .tiq-bottomnav{display:grid;grid-template-columns:repeat(5,1fr);gap:2px;position:fixed;left:0;right:0;bottom:0;z-index:120;background:${C.s1}f2;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid ${C.border};padding:6px max(6px,env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) max(6px,env(safe-area-inset-left));}
+    .tiq-fit-full{height:calc(100dvh - 125px - env(safe-area-inset-bottom));}
+    .tiq-fit-chat{height:calc(100dvh - 145px - env(safe-area-inset-bottom));}
+    /* iOS Safari zooms any focused control under 16px — lift them on phones */
+    input,select,textarea{font-size:16px!important;}
+  }
+  @media(pointer:coarse){
+    .tiq-btn{min-height:40px;}
+    .tiq-tab{min-height:46px;}
+    .qbtn{min-height:40px;}
+  }
+  @keyframes sheetUp{from{transform:translateY(40px);opacity:0}to{transform:translateY(0);opacity:1}}
   @media (prefers-reduced-motion: reduce){
     *,*::before,*::after{animation-duration:0.01ms!important;animation-iteration-count:1!important;transition-duration:0.01ms!important;}
   }
@@ -208,6 +242,7 @@ function TradeIQ({ session }) {
   const [researchOpp,setResearchOpp] = useState(null); // opportunity open in the Research Workspace
   const [researchingId,setResearchingId] = useState(null); // opportunity the AI analyst is researching right now
   const [councilRequest,setCouncilRequest] = useState(null); // topic to auto-convene when the Council tab opens
+  const [moreOpen,setMoreOpen] = useState(false); // mobile bottom-nav "More" sheet
   const [showAddH,setShowAddH]     = useState(false);
   const [showAddT,setShowAddT]     = useState(false);
   // `meta` holds the chosen search result {symbol,name,exchange,currency}. A
@@ -656,7 +691,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
 
   // ── AI CHAT ──
   const AIChat=()=>(
-    <div style={{display:"flex",flexDirection:"column",height:"calc(100vh - 175px)",minHeight:400}}>
+    <div className="tiq-fit-chat" style={{display:"flex",flexDirection:"column",minHeight:400}}>
       <div style={{background:C.green+"12",border:`1px solid ${C.green}25`,borderRadius:6,padding:"9px 14px",marginBottom:12,fontSize:12,color:C.green}}>
         🔒 AI is powered by Groq (Llama 3.3 70B) · Your API key is stored securely on the server — never visible in your browser
       </div>
@@ -886,33 +921,61 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
   </div>);
 
   return(
-    <div style={{background:C.bg,minHeight:"100vh",color:C.text,fontFamily:C.mono,fontSize:12}}>
+    <div style={{background:C.bg,minHeight:"100dvh",color:C.text,fontFamily:C.mono,fontSize:12}}>
       <style>{GS}</style>
-      <div style={{borderBottom:`1px solid ${C.border}`,padding:"10px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8,background:C.s1+"d9",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",position:"sticky",top:0,zIndex:100}}>
+      <div className="tiq-head" style={{borderBottom:`1px solid ${C.border}`,padding:"10px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8,background:C.s1+"d9",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",position:"sticky",top:0,zIndex:100}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <span style={{fontFamily:C.serif,fontWeight:900,fontSize:19,background:`linear-gradient(95deg,${C.accent},#ffd98a)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",letterSpacing:"0.01em"}}>TradeIQ</span>
-          <Tag c={C.green}>Free</Tag>
-          <Tag c={C.accent}>AI Active</Tag>
+          <span className="tiq-hide-sm"><Tag c={C.green}>Free</Tag><Tag c={C.accent}>AI Active</Tag></span>
           <Tag c={priceStatus==="live"?C.green:priceStatus==="loading"?C.gold:C.red}>
             {priceStatus==="live"?"● Live":priceStatus==="loading"?"● Fetching":"● Offline"}
           </Tag>
-          <span style={{fontSize:T.caption,color:syncColor[syncStatus],marginLeft:4}}>{syncLabel[syncStatus]}</span>
-          {lastUpdated&&<span style={{fontSize:T.caption,color:C.muted,marginLeft:4}}>Updated {lastUpdated.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}</span>}
+          <span className="tiq-hide-sm" style={{fontSize:T.caption,color:syncColor[syncStatus],marginLeft:4}}>{syncLabel[syncStatus]}</span>
+          {lastUpdated&&<span className="tiq-hide-sm" style={{fontSize:T.caption,color:C.muted,marginLeft:4}}>Updated {lastUpdated.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}</span>}
         </div>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <div style={{textAlign:"right"}}><div style={{fontSize:T.micro,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em"}}>Portfolio</div><div style={{fontFamily:C.display,fontWeight:700,color:C.accent,fontSize:14}}>{holdings.length===0?<Money value={0} currency="INR" decimals={0} size={14} color={C.accent}/>:<Money value={totalVal} currency="USD" size={14} color={C.accent}/>}{holdings.length>0&&<span style={{fontSize:T.caption,color:C.muted}}> / <Money value={totalVal*84} currency="INR" decimals={0} size={T.caption} color={C.muted}/></span>}</div></div>
-          {holdings.length>0&&<div style={{fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:4,background:pc(totalPnL)+"18",color:pc(totalPnL),border:`1px solid ${pc(totalPnL)}28`}}><Money value={totalPnL} currency="USD" signed code={false} size={11} color="inherit"/> ({ps(pnlPct)}{f(pnlPct)}%)</div>}
-          <Btn small color={C.muted} onClick={loadAll}>{syncStatus==="syncing"?<Spinner/>:"⟳"}</Btn>
-          {SUPABASE_READY&&session&&<Btn small color={C.muted} onClick={()=>db.auth.signOut()}>Sign out</Btn>}
+          {holdings.length>0&&<div className="tiq-hide-sm" style={{fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:4,background:pc(totalPnL)+"18",color:pc(totalPnL),border:`1px solid ${pc(totalPnL)}28`}}><Money value={totalPnL} currency="USD" signed code={false} size={11} color="inherit"/> ({ps(pnlPct)}{f(pnlPct)}%)</div>}
+          <span className="tiq-hide-sm" style={{display:"inline-flex",gap:8}}>
+            <Btn small color={C.muted} onClick={loadAll}>{syncStatus==="syncing"?<Spinner/>:"⟳"}</Btn>
+            {SUPABASE_READY&&session&&<Btn small color={C.muted} onClick={()=>db.auth.signOut()}>Sign out</Btn>}
+          </span>
         </div>
       </div>
-      <div style={{display:"flex",gap:2,borderBottom:`1px solid ${C.border}`,background:C.s1+"d9",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",overflowX:"auto",padding:"0 8px"}}>
-        {TABS.map(t=>(<button key={t.id} className="tiq-btn" onClick={()=>setTab(t.id)} aria-current={tab===t.id?"page":undefined} style={{padding:"11px 13px",fontSize:12,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",fontFamily:C.display,background:tab===t.id?C.accent+"12":"none",border:"none",borderRadius:"8px 8px 0 0",borderBottom:tab===t.id?`2px solid ${C.accent}`:"2px solid transparent",color:tab===t.id?C.accent:C.muted,whiteSpace:"nowrap"}}>{t.l}</button>))}
+      <div className="tiq-tabs" style={{display:"flex",gap:2,borderBottom:`1px solid ${C.border}`,background:C.s1+"d9",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",padding:"0 8px"}}>
+        {TABS.map(t=>(<button key={t.id} className="tiq-btn tiq-tab" onClick={()=>setTab(t.id)} aria-current={tab===t.id?"page":undefined} style={{padding:"11px 13px",fontSize:12,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",fontFamily:C.display,background:tab===t.id?C.accent+"12":"none",border:"none",borderRadius:"8px 8px 0 0",borderBottom:tab===t.id?`2px solid ${C.accent}`:"2px solid transparent",color:tab===t.id?C.accent:C.muted,whiteSpace:"nowrap"}}>{t.l}</button>))}
       </div>
-      <div key={tab} className="tab-in" style={{padding:18,maxWidth:1240,margin:"0 auto"}}>
-        {tab==="council"&&<div style={{height:"calc(100vh - 140px)",minHeight:480,margin:-18}}><Council theme={C} db={db} supabaseReady={SUPABASE_READY} userId={userId} holdings={holdings} journal={journal} reviews={Object.values(reviews)} opportunities={opportunities} watchlist={[...US_WATCHLIST,...INDIA_WATCHLIST]} request={councilRequest} onRequestConsumed={()=>setCouncilRequest(null)} onVerdict={handleCouncilVerdict}/></div>}{tab==="perf"&&<Performance journal={journal} reviews={Object.values(reviews)} theme={C}/>}{tab==="opps"&&Opportunities()}{tab==="dash"&&Dashboard()}{tab==="ai"&&AIChat()}{tab==="scanner"&&Scanner()}{tab==="chart"&&<div style={{height:"calc(100vh - 140px)",margin:-18}}><ChartView ticker={chartTicker} market={marketTab} onClose={null}/></div>}{tab==="strategies"&&StrategiesTab()}{tab==="journal"&&JournalTab()}{tab==="learn"&&Learn()}
+      <div key={tab} className="tab-in tiq-main" style={{padding:18,maxWidth:1240,margin:"0 auto"}}>
+        {tab==="council"&&<div className="tiq-bleed tiq-fit-full" style={{minHeight:480}}><Council theme={C} db={db} supabaseReady={SUPABASE_READY} userId={userId} holdings={holdings} journal={journal} reviews={Object.values(reviews)} opportunities={opportunities} watchlist={[...US_WATCHLIST,...INDIA_WATCHLIST]} request={councilRequest} onRequestConsumed={()=>setCouncilRequest(null)} onVerdict={handleCouncilVerdict}/></div>}{tab==="perf"&&<Performance journal={journal} reviews={Object.values(reviews)} theme={C}/>}{tab==="opps"&&Opportunities()}{tab==="dash"&&Dashboard()}{tab==="ai"&&AIChat()}{tab==="scanner"&&Scanner()}{tab==="chart"&&<div className="tiq-bleed tiq-fit-full"><ChartView ticker={chartTicker} market={marketTab} onClose={null}/></div>}{tab==="strategies"&&StrategiesTab()}{tab==="journal"&&JournalTab()}{tab==="learn"&&Learn()}
       </div>
       {researchOpp&&<ResearchWorkspace opp={researchOpp} theme={C} onSave={saveResearch} onCreateTrade={(o)=>{critiqueAndLog(o);setResearchOpp(null);}} onClose={()=>setResearchOpp(null)} onRunResearch={researchOpportunity} researching={researchingId===researchOpp.id}/>}
+
+      {/* ── MOBILE BOTTOM NAV — the 4 primary destinations + More sheet.
+          Desktop never sees this (display:none above 700px). ── */}
+      <nav className="tiq-bottomnav">
+        {[{id:"dash",i:"🎛️",l:"Mission"},{id:"opps",i:"💡",l:"Ideas"},{id:"council",i:"🏛️",l:"Council"},{id:"journal",i:"📓",l:"Journal"}].map(b=>(
+          <button key={b.id} className={`tiq-bn-item${tab===b.id&&!moreOpen?" on":""}`} onClick={()=>{setMoreOpen(false);setTab(b.id);}} aria-label={b.l}>
+            <span className="tiq-bn-ico">{b.i}</span><span className="tiq-bn-lbl">{b.l}</span>
+          </button>))}
+        <button className={`tiq-bn-item${moreOpen||!["dash","opps","council","journal"].includes(tab)?" on":""}`} onClick={()=>setMoreOpen(p=>!p)} aria-label="More">
+          <span className="tiq-bn-ico">⋯</span><span className="tiq-bn-lbl">More</span>
+        </button>
+      </nav>
+      {moreOpen&&(
+        <div onClick={()=>setMoreOpen(false)} style={{position:"fixed",inset:0,zIndex:115,background:"rgba(3,6,11,0.6)"}}>
+          <div onClick={e=>e.stopPropagation()} style={{position:"absolute",left:0,right:0,bottom:"calc(64px + env(safe-area-inset-bottom))",background:C.s1,borderTop:`1px solid ${C.border}`,borderRadius:"16px 16px 0 0",padding:"12px 14px 14px",animation:"sheetUp 0.22s cubic-bezier(0.16,1,0.3,1)",boxShadow:"0 -14px 44px #000a"}}>
+            <div style={{width:36,height:4,borderRadius:2,background:C.dim,margin:"0 auto 12px"}}/>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              {TABS.filter(t=>!["dash","opps","council","journal"].includes(t.id)).map(t=>(
+                <button key={t.id} className="tiq-btn" onClick={()=>{setTab(t.id);setMoreOpen(false);}} style={{textAlign:"left",background:tab===t.id?C.accent+"14":C.s2,border:`1px solid ${tab===t.id?C.accent+"50":C.border}`,borderRadius:10,color:tab===t.id?C.accent:C.text,fontFamily:C.display,fontWeight:700,fontSize:13,padding:"13px 14px"}}>{t.l}</button>))}
+            </div>
+            <div style={{display:"flex",gap:8,marginTop:10,borderTop:`1px solid ${C.border}`,paddingTop:10}}>
+              <button className="tiq-btn" onClick={()=>{loadAll();setMoreOpen(false);}} style={{flex:1,background:C.s2,border:`1px solid ${C.border}`,borderRadius:10,color:C.muted,fontFamily:C.display,fontWeight:700,fontSize:12,padding:"11px"}}>⟳ Refresh data</button>
+              {SUPABASE_READY&&session&&<button className="tiq-btn" onClick={()=>db.auth.signOut()} style={{flex:1,background:C.s2,border:`1px solid ${C.border}`,borderRadius:10,color:C.red,fontFamily:C.display,fontWeight:700,fontSize:12,padding:"11px"}}>Sign out</button>}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
