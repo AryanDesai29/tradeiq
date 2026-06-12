@@ -9,6 +9,8 @@ import { personalAlpha } from "./alpha.js";
 import { themeExposure, concentration, portfolioRiskFlags } from "./portfolio.js";
 import { thesisStats, thesisCalibration, finalVerdict } from "./thesis.js";
 import { recurringMistakes, processScore, VERDICT_LABEL } from "./reviews.js";
+import { pipelineState, scoreOpportunity, personalLens } from "./pipeline.js";
+import { taskProgress, researchDone } from "./analyst.js";
 
 const num = (x) => { const v = parseFloat(x); return Number.isFinite(v) ? v : null; };
 
@@ -42,6 +44,15 @@ export function actionQueue({ journal = [], reviews = [], opportunities = [], li
   const unreviewed = journal.filter((t) => isClosed(t) && !reviewedIds.has(t.id));
   if (unreviewed.length) items.push({ id: "review", severity: 3, count: unreviewed.length, tab: "journal",
     label: `Review ${unreviewed.length} closed trade${unreviewed.length > 1 ? "s" : ""}`, detail: "Unreviewed trades teach nothing — close the learning loop" });
+
+  // Pipeline (P3): decisions waiting on the user outrank everything but money at risk.
+  const decide = opportunities.filter((o) => o && pipelineState(o) === "ready");
+  if (decide.length) items.push({ id: "decide", severity: 3, count: decide.length, tab: "opps",
+    label: `${decide.length} opportunit${decide.length > 1 ? "ies" : "y"} ready for your decision`, detail: decide.slice(0, 4).map((o) => o.ticker).join(", ") });
+
+  const forCouncil = opportunities.filter((o) => o && pipelineState(o) === "council_review");
+  if (forCouncil.length) items.push({ id: "council_review", severity: 2, count: forCouncil.length, tab: "opps",
+    label: `${forCouncil.length} researched idea${forCouncil.length > 1 ? "s" : ""} awaiting Council review`, detail: forCouncil.slice(0, 4).map((o) => o.ticker).join(", ") });
 
   const fresh = opportunities.filter((o) => o && o.status === "new");
   if (fresh.length) items.push({ id: "opps", severity: 2, count: fresh.length, tab: "opps",
@@ -174,6 +185,25 @@ export function learningLoop(journal = [], reviews = []) {
     lastVerdict: latest?.verdict ? { key: latest.verdict, label: VERDICT_LABEL[latest.verdict] || latest.verdict, ticker: journal.find((t) => t.id === latest.trade_id)?.ticker || null } : null,
     lastThesisVerdict: latest ? finalVerdict(latest) : null,
     processTrend: trend, // >0 improving, <0 declining, null = not enough data
+  };
+}
+
+// ── Research pipeline (P3) — what the AI analyst is working on ───
+// Stage counts plus the items waiting on each actor: the analyst (researching,
+// with task progress), the Council (researched, awaiting debate — including
+// reconvenes where demanded research is now complete), and the user (ready).
+export function researchPipeline(opportunities = [], journal = []) {
+  const lens = personalLens(journal);
+  const live = opportunities.filter((o) => o && pipelineState(o) !== "archived");
+  const by = (s) => live.filter((o) => pipelineState(o) === s);
+  const councilQueue = by("council_review");
+  return {
+    discovered: by("discovered").length,
+    researching: by("researching").map((o) => ({ ticker: o.ticker, progress: taskProgress(o.research_tasks || []) })),
+    councilReady: councilQueue.length,
+    reconvene: councilQueue.filter((o) => o.council_verdict && researchDone(o.research_tasks || [])).length,
+    ready: by("ready").map((o) => ({ ticker: o.ticker, verdict: o.council_verdict || null, composite: scoreOpportunity(o, lens).composite })),
+    logged: by("logged").length,
   };
 }
 

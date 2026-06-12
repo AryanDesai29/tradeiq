@@ -8,7 +8,11 @@ import { symbolFor, decimalsFor, shortName, withCurrency, inferCurrency } from "
 import { performance, byCurrency, byStrategy, rMultipleOf, pnlOf } from "./analytics.js";
 import { normalizeReview } from "./reviews.js";
 import { THESIS_TYPES, THESIS_FIELD_MAX, thesisComplete, missingThesisFields } from "./thesis.js";
-import { normalizeOpportunities, opportunityReturn } from "./opportunities.js";
+import { normalizeOpportunities } from "./opportunities.js";
+import { personalLens, lensBlock, pipelineState, scoreOpportunity } from "./pipeline.js";
+import { defaultTasks, mergeTasks, queuedTasks, tasksFromCouncil, applyFindings, normalizeBrief, researchDone } from "./analyst.js";
+import { buildSources, sourcesBlock } from "./sources.js";
+import OpportunityPipeline from "./Pipeline.jsx";
 import ResearchWorkspace from "./ResearchWorkspace.jsx";
 import Council from "./Council.jsx";
 import MissionControl from "./MissionControl.jsx";
@@ -202,6 +206,8 @@ function TradeIQ({ session }) {
   const [opportunities,setOpportunities] = useState(()=>LS.load(`tradeiq_opps_backup_${userId}`,[]));
   const [generatingOpps,setGeneratingOpps] = useState(false);
   const [researchOpp,setResearchOpp] = useState(null); // opportunity open in the Research Workspace
+  const [researchingId,setResearchingId] = useState(null); // opportunity the AI analyst is researching right now
+  const [councilRequest,setCouncilRequest] = useState(null); // topic to auto-convene when the Council tab opens
   const [showAddH,setShowAddH]     = useState(false);
   const [showAddT,setShowAddT]     = useState(false);
   // `meta` holds the chosen search result {symbol,name,exchange,currency}. A
@@ -255,6 +261,21 @@ function TradeIQ({ session }) {
     if(!tickersMounted.current){ tickersMounted.current = true; return; }
     fetchPrices();
   },[customUS,customIndia]);
+
+  // ── CONTINUOUS SCANNING (P3) — the engine runs without being asked ──
+  // Serverless app = no cron, so "continuous" is an auto-discovery pass when the
+  // app opens with live prices, debounced to once per 24h via a local stamp
+  // (manual generates refresh the same stamp). Failures are silent — the rate
+  // limiter and the next day's pass cover it.
+  const autoDisc=useRef(false);
+  useEffect(()=>{
+    if(autoDisc.current||priceStatus!=="live")return;
+    let last=0; try{ last=+localStorage.getItem(`tradeiq_autodisc_${userId}`)||0; }catch{}
+    if(Date.now()-last<24*3600*1000)return;
+    autoDisc.current=true;
+    try{ localStorage.setItem(`tradeiq_autodisc_${userId}`,String(Date.now())); }catch{}
+    generateOpportunities({auto:true});
+  },[priceStatus]);
 
   // Mirror holdings/journal to localStorage so data survives a Supabase outage
   useEffect(()=>{ LS.save(`tradeiq_holdings_backup_${userId}`, holdings); },[holdings,userId]);
@@ -373,14 +394,15 @@ function TradeIQ({ session }) {
   // ── OPPORTUNITY DISCOVERY ENGINE (P3) ──
   // The AI proposes investable theses from the current watchlist snapshot; they're
   // stored (with snapshot price) so each idea is measurable against outcome later.
-  const generateOpportunities=async()=>{
+  const generateOpportunities=async(opts={})=>{
     if(generatingOpps)return; setGeneratingOpps(true);
     try{
       const list=WATCHLIST.filter(w=>w.price!=null);
       if(!list.length)throw new Error("No live watchlist prices yet — refresh prices first.");
       const stocks=list.map(w=>({ticker:w.ticker,name:w.name,currency:w.currency,price:w.price,chg:w.chg,rsi:w.rsi,ema20:w.ema20,ema200:w.ema200}));
       let token=null; if(SUPABASE_READY){try{const {data}=await db.auth.getSession();token=data.session?.access_token??null;}catch{}}
-      const res=await fetch("/api/opportunities",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:`Bearer ${token}`}:{})},body:JSON.stringify({stocks,market:marketTab,count:8})});
+      // The personal lens (proven edges/leaks from the journal) personalizes discovery.
+      const res=await fetch("/api/opportunities",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:`Bearer ${token}`}:{})},body:JSON.stringify({stocks,market:marketTab,count:8,lens:lensBlock(personalLens(journal))})});
       const data=await res.json();
       if(data.error)throw new Error(data.error);
       const known=new Set(list.map(w=>w.ticker));
@@ -393,7 +415,8 @@ function TradeIQ({ session }) {
       let stored=rows.map((r,i)=>({...r,id:`local_${Date.now()}_${i}`,generated_at:new Date().toISOString()}));
       try{ const {data:saved,error}=await db.from("tradeiq_opportunities").insert(rows).select(); if(!error&&saved&&saved.length)stored=saved; }catch{}
       setOpportunities(prev=>[...stored,...prev]);
-    }catch(e){ alert(e.message); }
+      try{ localStorage.setItem(`tradeiq_autodisc_${userId}`,String(Date.now())); }catch{}
+    }catch(e){ if(!opts.auto) alert(e.message); }
     setGeneratingOpps(false);
   };
   const setOppStatus=async(id,status)=>{
@@ -403,10 +426,85 @@ function TradeIQ({ session }) {
   // Persist Research Workspace edits (thesis fields + evidence log + notes) back
   // to the opportunity row, in place — research enriches the opportunity.
   const saveResearch=async(o)=>{
-    const patch={thesis_type:o.thesis_type,market_expectations:o.market_expectations,reality_hypothesis:o.reality_hypothesis,evidence:o.evidence,bull_case:o.bull_case,bear_case:o.bear_case,invalidation:o.invalidation,confidence:o.confidence,risk_level:o.risk_level,evidence_log:o.evidence_log||[],notes:o.notes||null};
+    const patch={thesis_type:o.thesis_type,market_expectations:o.market_expectations,reality_hypothesis:o.reality_hypothesis,evidence:o.evidence,bull_case:o.bull_case,bear_case:o.bear_case,invalidation:o.invalidation,confidence:o.confidence,risk_level:o.risk_level,evidence_log:o.evidence_log||[],notes:o.notes||null,research_tasks:o.research_tasks||[],research_brief:o.research_brief||null};
     setOpportunities(p=>p.map(x=>x.id===o.id?{...x,...patch}:x));
     try{ if(typeof o.id!=="string") await db.from("tradeiq_opportunities").update(patch).eq("id",o.id); }catch{}
   };
+
+  // ── RESEARCH ANALYST ENGINE (P3) — run queued tasks through /api/research ──
+  // Ensures the 6-question playbook exists, executes whatever is queued, applies
+  // the findings + normalized brief, and advances the pipeline (all tasks done →
+  // council_review). Returns the patch so an open workspace can sync its draft.
+  const researchOpportunity=async(o)=>{
+    if(researchingId)return null; setResearchingId(o.id);
+    try{
+      const now=new Date().toISOString();
+      let tasks=Array.isArray(o.research_tasks)&&o.research_tasks.length?o.research_tasks:defaultTasks(o,now);
+      const queued=queuedTasks(tasks);
+      if(!queued.length)throw new Error("No queued research tasks — add a question in the workspace or convene the Council.");
+      // Show the work immediately: tasks + researching state land before the call.
+      const pre={research_tasks:tasks,...(pipelineState(o)==="discovered"?{status:"researching"}:{})};
+      setOpportunities(p=>p.map(x=>x.id===o.id?{...x,...pre}:x));
+      const snap=liveData[o.ticker]||{};
+      let token=null; if(SUPABASE_READY){try{const {data}=await db.auth.getSession();token=data.session?.access_token??null;}catch{}}
+      const hdrs=token?{Authorization:`Bearer ${token}`}:undefined;
+      // REAL sources (P3.1): dated news headlines + SEC filings index, fetched in
+      // parallel, best-effort — a sources outage degrades the brief, never blocks it.
+      const [newsRes,filRes]=await Promise.all([
+        fetch(`/api/news?ticker=${encodeURIComponent(o.ticker)}`,{headers:hdrs}).then(r=>r.json()).catch(()=>null),
+        fetch(`/api/filings?ticker=${encodeURIComponent(o.ticker)}`,{headers:hdrs}).then(r=>r.json()).catch(()=>null),
+      ]);
+      const sources=buildSources({news:newsRes?.news,filings:filRes?.filings,note:filRes?.note},now);
+      const res=await fetch("/api/research",{method:"POST",headers:{"Content-Type":"application/json",...(hdrs||{})},body:JSON.stringify({
+        opportunity:{ticker:o.ticker,name:o.name,thesis_type:o.thesis_type,market_expectations:o.market_expectations,reality_hypothesis:o.reality_hypothesis,evidence:o.evidence,bull_case:o.bull_case,bear_case:o.bear_case,invalidation:o.invalidation,confidence:o.confidence,risk_level:o.risk_level},
+        tasks:queued.map(({id,type,question})=>({id,type,question})),
+        snapshot:{price:snap.price,chg:snap.chg,rsi:snap.rsi,ema20:snap.ema20,ema200:snap.ema200},
+        lens:lensBlock(personalLens(journal)),
+        sourcesText:sourcesBlock(sources),
+      })});
+      const data=await res.json();
+      if(data.error)throw new Error(data.error);
+      tasks=applyFindings(tasks,data.findings,now);
+      const brief=normalizeBrief(data.brief)||o.research_brief||null;
+      const status=researchDone(tasks)?"council_review":(pre.status||o.status);
+      const patch={research_tasks:tasks,research_brief:brief,research_sources:sources,researched_at:now,status};
+      patch.scores=scoreOpportunity({...o,...patch},personalLens(journal));
+      setOpportunities(p=>p.map(x=>x.id===o.id?{...x,...patch}:x));
+      try{ if(typeof o.id!=="string") await db.from("tradeiq_opportunities").update(patch).eq("id",o.id); }catch{}
+      return patch;
+    }catch(e){ alert(e.message); return null; }
+    finally{ setResearchingId(null); }
+  };
+
+  // Pipeline card → Council tab, topic pre-convened. The title is deterministic
+  // from the opportunity so the Council's 24h topic-hash cache keeps working.
+  const openCouncilFor=(o)=>{
+    setCouncilRequest({type:"opportunity",ticker:o.ticker,title:`${o.ticker} ${o.thesis_type||"opportunity"}: ${(o.reality_hypothesis||o.bull_case||"review this idea").slice(0,140)}`});
+    setTab("council");
+  };
+
+  // ── COUNCIL → PIPELINE (P4) — verdicts drive the state machine ──
+  // Marlowe's EVIDENCE MISSING, Popper's RED FLAG REVIEW and the verdict's
+  // required_research become queued tasks and reopen research; a clean verdict
+  // promotes the idea to Ready. Idempotent: tasks dedupe by content id, so a
+  // cached-session replay changes nothing. Runs inside the state updater to
+  // avoid stale closures when verdicts land mid-update.
+  const handleCouncilVerdict=useCallback((topic,sess)=>{
+    const tk=(topic?.ticker||"").trim().toUpperCase();
+    if(!tk||!sess?.verdict)return;
+    setOpportunities(prev=>{
+      const opp=prev.find(o=>o.ticker===tk&&!["dismissed","archived","logged"].includes(o.status));
+      if(!opp)return prev;
+      const now=new Date().toISOString();
+      const tasks=mergeTasks(Array.isArray(opp.research_tasks)?opp.research_tasks:[],tasksFromCouncil(sess,now));
+      const demands=sess.evidence_hold?.raised||sess.red_flags?.raised||(sess.verdict.required_research||[]).length>0;
+      const status=demands&&!researchDone(tasks)?"researching":"ready";
+      const patch={council_verdict:sess.verdict.recommendation,council_confidence:sess.verdict.confidence,research_tasks:tasks,status};
+      patch.scores=scoreOpportunity({...opp,...patch},personalLens(journal));
+      try{ if(typeof opp.id!=="string") db.from("tradeiq_opportunities").update(patch).eq("id",opp.id).then(()=>{}); }catch{}
+      return prev.map(x=>x.id===opp.id?{...x,...patch}:x);
+    });
+  },[journal]);
   // Close the loop: an opportunity → prefilled trade form (thesis already filled),
   // so "the AI builds the thesis, Aryan critiques", then logs it.
   const critiqueAndLog=(o)=>{
@@ -492,54 +590,16 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
   const syncColor={idle:C.muted,syncing:C.gold,synced:C.green,error:C.red};
   const TABS=[{id:"dash",l:"🎛️ Mission Control"},{id:"council",l:"🏛️ Council"},{id:"perf",l:"🏆 Performance"},{id:"opps",l:"💡 Opportunities"},{id:"ai",l:"🤖 AI Advisor"},{id:"scanner",l:"🔍 Scanner"},{id:"chart",l:"📈 Charts"},{id:"strategies",l:"⚡ Strategies"},{id:"journal",l:"📓 Journal"},{id:"learn",l:"📚 Learn"}];
 
-  // ── DASHBOARD ──
-  // ── OPPORTUNITIES TAB — proactive AI-discovered theses to critique ──
-  const Opportunities=()=>{
-    const riskCol={low:C.green,medium:C.gold,high:C.red};
-    const active=opportunities.filter(o=>o.status!=="dismissed");
-    const Field=({label,value,color})=>(<div style={{flex:1,minWidth:150}}><div style={{fontSize:T.caption,color:color||C.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:2}}>{label}</div><div style={{fontSize:T.data,color:C.text,lineHeight:1.45}}>{value||"—"}</div></div>);
-    return (<div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:6,flexWrap:"wrap",gap:8}}>
-        <div><div style={{fontFamily:C.display,fontWeight:800,fontSize:17}}>Opportunities</div><div style={{fontSize:11,color:C.muted}}>The AI proposes theses from your {marketTab==="us"?"US":"India"} watchlist — you critique.</div></div>
-        <Btn solid color={generatingOpps?C.muted:C.green} onClick={generateOpportunities}>{generatingOpps?<><Spinner/> Discovering…</>:`✨ Generate from ${marketTab==="us"?"US":"India"} watchlist`}</Btn>
-      </div>
-      <div style={{fontSize:T.caption,color:C.gold,marginBottom:12,lineHeight:1.5}}>⚠️ Hypotheses to critique, not fundamental research. The AI has no filings — each idea is grounded in technicals + general reasoning. Stress-test the bear case before acting.</div>
-      {active.length===0?(<Card style={{textAlign:"center",padding:42}}><div style={{fontSize:32,marginBottom:10}}>💡</div><div style={{fontFamily:C.display,fontWeight:700,fontSize:15,marginBottom:6}}>No opportunities yet</div><div style={{color:C.muted,fontSize:12,maxWidth:380,margin:"0 auto",lineHeight:1.6}}>Hit <b style={{color:C.green}}>Generate</b> and the AI scans your watchlist for spots where reality may be diverging from what the market expects. Each becomes a thesis you can critique and log.</div></Card>):
-      active.map(o=>{const live=liveData[o.ticker];const ret=live?opportunityReturn(o,live.price):null;const sym=symbolFor(o.currency);return(
-        <Card key={o.id} style={{borderLeft:`3px solid ${riskCol[o.risk_level]||C.gold}`,opacity:o.status==="logged"?0.78:1}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8,marginBottom:8}}>
-            <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-              <TickerID size="card" symbol={o.ticker} name={o.name} currency={o.currency}/>
-              {o.thesis_type&&<Tag c={C.accent}>{o.thesis_type}</Tag>}
-              <Tag c={riskCol[o.risk_level]||C.gold}>{(o.risk_level||"med").toUpperCase()} RISK</Tag>
-              {o.status==="logged"&&<Tag c={C.green}>LOGGED</Tag>}
-              {o.status==="watching"&&<Tag c={C.blue}>WATCHING</Tag>}
-            </div>
-            <div style={{display:"flex",alignItems:"center",gap:10}}>
-              {ret!=null&&<span style={{fontSize:T.caption,fontWeight:700,color:ret>=0?C.green:C.red}}>{ret>=0?"+":""}{f(ret)}% since{o.price_at_gen!=null&&<> <Money value={o.price_at_gen} currency={o.currency} code={false} size={T.caption} color="inherit"/></>}</span>}
-              <div style={{textAlign:"right"}}><div style={{fontFamily:C.display,fontWeight:800,fontSize:16,color:o.confidence>=70?C.green:o.confidence>=50?C.gold:C.muted}}>{o.confidence}%</div><div style={{fontSize:T.micro,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:C.muted}}>Confidence</div></div>
-            </div>
-          </div>
-          <div style={{display:"flex",gap:14,flexWrap:"wrap",marginBottom:8}}>
-            <Field label="Market expects" value={o.market_expectations}/>
-            <Field label="Reality hypothesis" value={o.reality_hypothesis} color={C.green}/>
-          </div>
-          <div style={{display:"flex",gap:14,flexWrap:"wrap",marginBottom:8}}>
-            <Field label="Bull case" value={o.bull_case} color={C.green}/>
-            <Field label="Bear case" value={o.bear_case} color={C.red}/>
-          </div>
-          {o.evidence&&<div style={{fontSize:T.caption,color:C.muted,marginBottom:4,lineHeight:1.5}}><b style={{color:C.dim}}>Check:</b> {o.evidence}</div>}
-          {o.invalidation&&<div style={{fontSize:T.caption,color:C.red,marginBottom:8,lineHeight:1.5}}><b>Invalidation:</b> {o.invalidation}</div>}
-          <div style={{display:"flex",gap:8,flexWrap:"wrap",borderTop:`1px solid ${C.border}`,paddingTop:8}}>
-            <Btn small solid color={C.purple} onClick={()=>setResearchOpp(o)}>🔬 Research</Btn>
-            <Btn small color={C.accent} onClick={()=>critiqueAndLog(o)}>Critique &amp; Log →</Btn>
-            {o.status!=="watching"&&<Btn small color={C.blue} onClick={()=>setOppStatus(o.id,"watching")}>Watch</Btn>}
-            <Btn small color={C.muted} onClick={()=>setOppStatus(o.id,"dismissed")}>Dismiss</Btn>
-          </div>
-        </Card>);})}
-    </div>);
-  };
+  // ── OPPORTUNITY PIPELINE TAB — the analyst desk board (Pipeline.jsx) ──
+  const Opportunities=()=>(
+    <OpportunityPipeline opportunities={opportunities} liveData={liveData} journal={journal} marketTab={marketTab}
+      generating={generatingOpps} researchingId={researchingId}
+      onGenerate={()=>generateOpportunities()} onResearch={researchOpportunity}
+      onOpenWorkspace={(o)=>setResearchOpp(o)} onCouncil={openCouncilFor}
+      onLog={critiqueAndLog} onMove={setOppStatus}/>
+  );
 
+  // ── DASHBOARD ──
   // Portfolio in a common base (USD) so ₹ and $ positions are comparable.
   const FX={USD:1,INR:1/84};
   const Dashboard=()=>(
@@ -850,9 +910,9 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
         {TABS.map(t=>(<button key={t.id} className="tiq-btn" onClick={()=>setTab(t.id)} aria-current={tab===t.id?"page":undefined} style={{padding:"11px 13px",fontSize:12,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",fontFamily:C.display,background:tab===t.id?C.accent+"12":"none",border:"none",borderRadius:"8px 8px 0 0",borderBottom:tab===t.id?`2px solid ${C.accent}`:"2px solid transparent",color:tab===t.id?C.accent:C.muted,whiteSpace:"nowrap"}}>{t.l}</button>))}
       </div>
       <div key={tab} className="tab-in" style={{padding:18,maxWidth:1240,margin:"0 auto"}}>
-        {tab==="council"&&<div style={{height:"calc(100vh - 140px)",minHeight:480,margin:-18}}><Council theme={C} db={db} supabaseReady={SUPABASE_READY} userId={userId} holdings={holdings} journal={journal} reviews={Object.values(reviews)} opportunities={opportunities} watchlist={[...US_WATCHLIST,...INDIA_WATCHLIST]}/></div>}{tab==="perf"&&<Performance journal={journal} reviews={Object.values(reviews)} theme={C}/>}{tab==="opps"&&Opportunities()}{tab==="dash"&&Dashboard()}{tab==="ai"&&AIChat()}{tab==="scanner"&&Scanner()}{tab==="chart"&&<div style={{height:"calc(100vh - 140px)",margin:-18}}><ChartView ticker={chartTicker} market={marketTab} onClose={null}/></div>}{tab==="strategies"&&StrategiesTab()}{tab==="journal"&&JournalTab()}{tab==="learn"&&Learn()}
+        {tab==="council"&&<div style={{height:"calc(100vh - 140px)",minHeight:480,margin:-18}}><Council theme={C} db={db} supabaseReady={SUPABASE_READY} userId={userId} holdings={holdings} journal={journal} reviews={Object.values(reviews)} opportunities={opportunities} watchlist={[...US_WATCHLIST,...INDIA_WATCHLIST]} request={councilRequest} onRequestConsumed={()=>setCouncilRequest(null)} onVerdict={handleCouncilVerdict}/></div>}{tab==="perf"&&<Performance journal={journal} reviews={Object.values(reviews)} theme={C}/>}{tab==="opps"&&Opportunities()}{tab==="dash"&&Dashboard()}{tab==="ai"&&AIChat()}{tab==="scanner"&&Scanner()}{tab==="chart"&&<div style={{height:"calc(100vh - 140px)",margin:-18}}><ChartView ticker={chartTicker} market={marketTab} onClose={null}/></div>}{tab==="strategies"&&StrategiesTab()}{tab==="journal"&&JournalTab()}{tab==="learn"&&Learn()}
       </div>
-      {researchOpp&&<ResearchWorkspace opp={researchOpp} theme={C} onSave={saveResearch} onCreateTrade={(o)=>{critiqueAndLog(o);setResearchOpp(null);}} onClose={()=>setResearchOpp(null)}/>}
+      {researchOpp&&<ResearchWorkspace opp={researchOpp} theme={C} onSave={saveResearch} onCreateTrade={(o)=>{critiqueAndLog(o);setResearchOpp(null);}} onClose={()=>setResearchOpp(null)} onRunResearch={researchOpportunity} researching={researchingId===researchOpp.id}/>}
     </div>
   );
 }

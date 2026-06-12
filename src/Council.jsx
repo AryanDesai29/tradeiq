@@ -57,7 +57,7 @@ const powerQueue = (s) => [
   ...(s?.red_flags?.raised ? [{ kind: "redflag", emoji: "⚖️", title: "RED FLAG REVIEW", color: "#f48fb1", text: (s.red_flags.flags || []).join(" · "), sub: s.red_flags.resolution || "The Skeptic demands the reasoning flaws be addressed" }] : []),
 ];
 
-export default function Council({ theme: C, db, supabaseReady, userId, holdings, journal, reviews, opportunities, watchlist }) {
+export default function Council({ theme: C, db, supabaseReady, userId, holdings, journal, reviews, opportunities, watchlist, request, onRequestConsumed, onVerdict }) {
   const serif = "'Fraunces',serif";
   const [phase, setPhase]         = useState("idle"); // idle|convening|debate|powers|voting|verdict
   const [topic, setTopic]         = useState(null);
@@ -185,6 +185,21 @@ export default function Council({ theme: C, db, supabaseReady, userId, holdings,
       playSession(t, norm, "live", false);
     } catch (e) { setErr(e.message); setPhase("idle"); }
   };
+
+  // ── External convene requests (P4) — the Opportunity Pipeline sends a topic
+  // and the chamber convenes it directly (cache-first, like any other topic).
+  useEffect(() => {
+    if (!request) return;
+    onRequestConsumed?.();
+    setTType(request.type || "opportunity"); setTTicker(request.ticker || ""); setTText(request.title || "");
+    if (phase !== "convening") convene(request);
+  }, [request]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Verdict → pipeline (P4) — fires once per playback reaching the verdict,
+  // for live AND cached sessions. The consumer is idempotent (tasks dedupe).
+  useEffect(() => {
+    if (phase === "verdict" && session && topic) onVerdict?.(topic, session);
+  }, [phase]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const replay = (rec) => { if (!rec?.session) return; setSource("cache"); setCachedAt(rec.at || null); savedRef.current = rec.session; setTopic(rec.topic); setSession(rec.session); setTurnIdx(0); setVotesShown(0); setPowerIdx(0); setErr(null); setPhase("debate"); };
   const skip = () => { if (phase === "debate") setTurnIdx(session.transcript.length); else if (phase === "powers") setPowerIdx(99); else if (phase === "voting") setVotesShown(session.votes.length); };

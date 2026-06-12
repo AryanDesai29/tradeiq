@@ -21,6 +21,7 @@ Hard rules:
 - Only use tickers from the provided list. Never invent a ticker.
 - Be selective and honest. A flat, uninteresting stock should be skipped, not forced into an idea. Prefer fewer strong ideas over filler.
 - Ground each idea in the snapshot (trend vs EMA20/EMA200, RSI, recent change) plus general, non-fabricated market understanding.
+- If a USER TRACK RECORD section is provided, personalize: prefer thesis types where the user has a PROVEN edge, and be noticeably more skeptical (lower confidence, sharper bear case) on thesis types that are proven leaks. Never invent a track record that isn't given.
 
 For each opportunity:
 - thesis_type: ONE of exactly: ${THESIS_TYPES.join(', ')}.
@@ -44,7 +45,7 @@ export default async function handler(req, res) {
   const rl = await enforce(`u:${user.id}`, [['opps_burst', 2, 60], ['opps_hourly', 6, 3600]]);
   if (!rl.ok) return tooMany(res, rl.retryAfter);
 
-  const { stocks, market, count } = req.body || {};
+  const { stocks, market, count, lens } = req.body || {};
   if (!Array.isArray(stocks) || stocks.length === 0) return res.status(400).json({ error: 'Missing stocks' });
 
   const GROQ_KEY = process.env.GROQ_API_KEY;
@@ -55,7 +56,8 @@ export default async function handler(req, res) {
     ticker: s.ticker, name: s.name, currency: s.currency,
     price: s.price, chgPct: s.chg, rsi: s.rsi, ema20: s.ema20, ema200: s.ema200,
   }));
-  const userMsg = `Market: ${market === 'india' ? 'India NSE' : 'US (NYSE/NASDAQ)'}. Propose up to ${n} of the strongest opportunities (skip uninteresting names). Stocks:\n${JSON.stringify(universe, null, 0)}`;
+  const lensBlock = typeof lens === 'string' && lens.trim() ? `\nUSER TRACK RECORD (real, from their journal):\n${lens.trim().slice(0, 700)}` : '';
+  const userMsg = `Market: ${market === 'india' ? 'India NSE' : 'US (NYSE/NASDAQ)'}. Propose up to ${n} of the strongest opportunities (skip uninteresting names).${lensBlock}\nStocks:\n${JSON.stringify(universe, null, 0)}`;
 
   try {
     const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {

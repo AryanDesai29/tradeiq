@@ -12,7 +12,7 @@ import { track, usageSummary } from "./telemetry.js";
 import {
   openPositions, thesisHealth, HEALTH_LABEL, actionQueue, featuredOpportunity,
   biggestRisk, missionBriefing, iqSnapshot, alphaSnapshot, learningLoop,
-  lastCouncil, commandStats,
+  lastCouncil, commandStats, researchPipeline,
 } from "./mission.js";
 
 const HEALTH_COLOR = { intact: C.green, weakening: C.gold, broken: C.red, unknown: C.dim };
@@ -61,6 +61,7 @@ export default function MissionControl({ holdings = [], journal = [], reviewsMap
   const iq = useMemo(() => iqSnapshot(journal, reviews), [journal, reviews]);
   const alpha = useMemo(() => alphaSnapshot(journal), [journal]);
   const loop = useMemo(() => learningLoop(journal, reviews), [journal, reviews]);
+  const pipe = useMemo(() => researchPipeline(opportunities, journal), [opportunities, journal]);
   const open = openPositions(journal);
 
   return (
@@ -176,6 +177,39 @@ export default function MissionControl({ holdings = [], journal = [], reviewsMap
           )}
         </Panel>
       </div>
+
+      {/* ── ROW C2: RESEARCH PIPELINE — the AI analyst's desk ────── */}
+      <Panel title="Research Pipeline" tone={pipe.ready.length ? C.green : pipe.researching.length ? C.purple : undefined}
+        right={<GoBtn color={C.purple} onClick={() => go("pipeline.open", "opps")}>Open Pipeline</GoBtn>}>
+        {pipe.discovered + pipe.researching.length + pipe.councilReady + pipe.ready.length + pipe.logged === 0
+          ? <Empty>No ideas in the pipeline. The engine auto-discovers daily, or hit Discover in the Opportunities tab.</Empty>
+          : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(118px,1fr))", gap: 10 }}>
+                <Kv label="Discovered" color={C.blue}>{pipe.discovered}</Kv>
+                <Kv label="Researching" color={C.purple}>{pipe.researching.length}</Kv>
+                <Kv label="Council queue" color={C.gold}>{pipe.councilReady}</Kv>
+                <Kv label="Ready to decide" color={pipe.ready.length ? C.green : C.text}>{pipe.ready.length}</Kv>
+              </div>
+              {pipe.researching.slice(0, 3).map((r) => (
+                <div key={r.ticker} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ width: 90, fontSize: T.caption, color: C.text, fontFamily: C.mono }}>{r.ticker}</span>
+                  <div style={{ flex: 1, height: 5, background: C.dim, borderRadius: 3, overflow: "hidden" }}><div style={{ width: `${r.progress.pct * 100}%`, height: "100%", background: C.purple }} /></div>
+                  <span style={{ fontSize: T.caption, color: C.muted, whiteSpace: "nowrap" }}>{r.progress.done}/{r.progress.total} tasks</span>
+                </div>
+              ))}
+              {pipe.reconvene > 0 && <div style={{ fontSize: T.caption, color: C.gold, lineHeight: 1.5 }}>⚖ {pipe.reconvene} idea{pipe.reconvene > 1 ? "s" : ""} finished the Council's required research — reconvene for an updated verdict.</div>}
+              {pipe.ready.slice(0, 3).map((r) => (
+                <div key={r.ticker} style={{ display: "flex", alignItems: "baseline", gap: 8, fontSize: T.caption }}>
+                  <span style={{ color: C.green }}>●</span>
+                  <span style={{ color: C.text, fontFamily: C.mono }}>{r.ticker}</span>
+                  {r.verdict && <span style={{ color: r.verdict.includes("Buy") ? C.green : r.verdict.includes("Avoid") ? C.red : C.gold }}>{r.verdict}</span>}
+                  <span style={{ marginLeft: "auto", color: C.muted }}>score {r.composite}</span>
+                </div>
+              ))}
+            </div>
+          )}
+      </Panel>
 
       {/* ── ROW D: OPEN POSITIONS — decision cards ───────────────── */}
       <Panel title="Open Positions" right={<span style={{ fontSize: T.caption, color: C.dim }}>thesis health = price progress toward your stop</span>}>
