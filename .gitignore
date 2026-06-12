@@ -4,3 +4,6 @@ dist/
 .env
 .DS_Store
 *.log
+
+# Validation Lab replay artifacts (regenerable; report lives in docs/)
+scripts/validation-runs/
