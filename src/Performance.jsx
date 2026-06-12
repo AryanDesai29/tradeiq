@@ -4,12 +4,15 @@ import { thesisStats, thesisCalibration } from "./thesis.js";
 import { T } from "./theme.js";
 import { Money, Term } from "./ui.jsx";
 import PersonalAlpha from "./Alpha.jsx";
+import DecisionQuality from "./DecisionQuality.jsx";
 
-// ─── PERFORMANCE DASHBOARD (Priority 1) ──────────────────────────────────────
-// Risk-normalised (R-multiple) headline metrics that are valid across ₹ and $,
-// plus per-currency money blocks and monthly returns. Pure presentation over
-// ./analytics.js — no currency logic lives here.
-export default function Performance({ journal = [], reviews = [], theme }) {
+// ─── ALPHA LAB — "what makes Aryan money + a better investor" ─────────────────
+// One room for the whole self-knowledge layer, three pillars: Investor IQ
+// (prediction quality) · Personal Alpha (edges & leaks) · Decision Quality (is
+// the AI actually improving decisions?). Risk-normalised (R-multiple) headline
+// metrics are valid across ₹ and $; money blocks stay per-currency. Pure
+// presentation over ./analytics.js + ./decisionQuality.js.
+export default function Performance({ journal = [], reviews = [], opportunities = [], userId, theme }) {
   const C = theme;
   const p = performance(journal);
   const cur = byCurrency(journal);
@@ -30,15 +33,28 @@ export default function Performance({ journal = [], reviews = [], theme }) {
     </div>
   );
 
+  const AlphaLabHeader = () => (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ fontFamily: C.display, fontWeight: 800, fontSize: 17 }}>🧪 Alpha Lab</div>
+      <div style={{ fontSize: T.caption, color: C.muted, marginTop: 2 }}>What makes you money · what makes you a better investor · is the AI helping</div>
+    </div>
+  );
+
+  // Performance (P&L) needs closed trades; Decision Quality does NOT — it measures
+  // the AI funnel, so it renders from the first opportunity, before any trade closes.
   if (p.trades === 0) {
     return (
-      <div style={{ textAlign: "center", padding: "60px 16px", color: C.muted }}>
-        <div style={{ fontSize: 36, marginBottom: 12 }}>📈</div>
-        <div style={{ fontFamily: C.display, fontWeight: 800, fontSize: 18, color: C.text, marginBottom: 6 }}>No closed trades yet</div>
-        <div style={{ fontSize: 12, lineHeight: 1.6, maxWidth: 380, margin: "0 auto" }}>
-          Close a few trades in the Journal and your performance — win rate, expectancy, profit factor, drawdown — appears here automatically.
-          {p.open > 0 && <><br /><br />You have <b style={{ color: C.accent }}>{p.open}</b> open trade{p.open > 1 ? "s" : ""} in progress.</>}
+      <div>
+        <AlphaLabHeader />
+        <div style={{ textAlign: "center", padding: "32px 16px", color: C.muted, background: C.s1, border: `1px solid ${C.border}`, borderRadius: 8, marginBottom: 12 }}>
+          <div style={{ fontSize: 30, marginBottom: 10 }}>📈</div>
+          <div style={{ fontFamily: C.display, fontWeight: 800, fontSize: 16, color: C.text, marginBottom: 6 }}>No closed trades yet</div>
+          <div style={{ fontSize: 12, lineHeight: 1.6, maxWidth: 420, margin: "0 auto" }}>
+            Win rate, expectancy, Personal Alpha and Investor IQ appear once you close trades. Decision Quality below works now — it measures whether the AI is advancing ideas toward decisions.
+            {p.open > 0 && <><br /><br />You have <b style={{ color: C.accent }}>{p.open}</b> open trade{p.open > 1 ? "s" : ""} in progress.</>}
+          </div>
         </div>
+        <DecisionQuality opportunities={opportunities} journal={journal} reviews={reviews} theme={C} userId={userId} />
       </div>
     );
   }
@@ -53,7 +69,10 @@ export default function Performance({ journal = [], reviews = [], theme }) {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
-        <div style={{ fontFamily: C.display, fontWeight: 800, fontSize: 17 }}>Performance</div>
+        <div>
+          <div style={{ fontFamily: C.display, fontWeight: 800, fontSize: 17 }}>🧪 Alpha Lab</div>
+          <div style={{ fontSize: T.caption, color: C.muted, marginTop: 2 }}>What makes you money · what makes you a better investor · is the AI helping</div>
+        </div>
         <div style={{ fontSize: 11, color: C.muted }}>{p.trades} closed · {p.open} open · {p.withRisk} with a stop (R valid)</div>
       </div>
 
@@ -155,6 +174,9 @@ export default function Performance({ journal = [], reviews = [], theme }) {
           full edge/leak engine: expectancy in R by strategy, sector, market,
           side, and holding period. */}
       <PersonalAlpha journal={journal} reviews={reviews} theme={C} />
+
+      {/* Third pillar — Decision Quality: is the AI actually improving decisions? */}
+      <DecisionQuality opportunities={opportunities} journal={journal} reviews={reviews} theme={C} userId={userId} />
 
       {/* Monthly returns per currency */}
       <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 8, padding: 16 }}>
