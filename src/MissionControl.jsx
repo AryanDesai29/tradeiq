@@ -8,7 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 import { C, T } from "./theme.js";
 import { TickerID, Money, Term } from "./ui.jsx";
 import { coalitions } from "./council.js";
-import { track, usageSummary } from "./telemetry.js";
+import { track, usageSummary, filingImpactReport } from "./telemetry.js";
 import {
   openPositions, thesisHealth, HEALTH_LABEL, actionQueue, featuredOpportunity,
   biggestRisk, missionBriefing, iqSnapshot, alphaSnapshot, learningLoop,
@@ -46,7 +46,11 @@ export default function MissionControl({ holdings = [], journal = [], reviewsMap
   // Local-only usage instrumentation (see telemetry.js). `hit` then act.
   const hit = (key) => track(localStorage, userId, key);
   const go = (key, tab) => { hit(key); goTab(tab); };
-  useEffect(() => { window.tiqUsage = () => usageSummary(localStorage, userId); return () => { delete window.tiqUsage; }; }, [userId]);
+  useEffect(() => {
+    window.tiqUsage = () => usageSummary(localStorage, userId);
+    window.tiqFilings = () => filingImpactReport(localStorage, userId); // Filing Intelligence Report (P3.2)
+    return () => { delete window.tiqUsage; delete window.tiqFilings; };
+  }, [userId]);
   const reviews = useMemo(() => Object.values(reviewsMap), [reviewsMap]);
   const liveOf = (tk) => liveData[tk]?.price ?? null;
   const pfItems = useMemo(() => holdings.map((h) => ({ ticker: h.ticker, sector: h.sector, value: (+h.shares || 0) * (+h.price || 0) * (fx[h.currency] || 1) })), [holdings, fx]);

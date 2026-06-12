@@ -27,7 +27,15 @@ export function normalizeNews(rawArr, max = 8) {
   return out;
 }
 
-// EDGAR filing entry → {form, filed(YYYY-MM-DD), title, link}.
+// EDGAR filing entry → {form, filed(YYYY-MM-DD), title, link, accession}.
+// `accession` (digits only) is the permanent cache key the ingestion pipeline
+// (P3.2b) reads a filing by; it is sanitized from the link when not supplied.
+const accOf = (f) => {
+  const a = typeof f.accession === "string" ? f.accession.replace(/[^0-9]/g, "") : "";
+  if (a.length >= 10) return a;
+  const m = httpLink(f.link).match(/\/(\d{15,})\//); // …/data/{cik}/{accession=18 digits}/{doc}
+  return m ? m[1] : "";
+};
 export function normalizeFilings(rawArr, max = 10) {
   if (!Array.isArray(rawArr)) return [];
   const out = [];
@@ -35,11 +43,16 @@ export function normalizeFilings(rawArr, max = 10) {
     if (!f || typeof f !== "object") continue;
     const form = str(f.form, 12), filed = str(f.filed, 12);
     if (!form || !filed) continue;
-    out.push({ form, filed, title: str(f.title, 120), link: httpLink(f.link) });
+    out.push({ form, filed, title: str(f.title, 120), link: httpLink(f.link), accession: accOf(f) });
     if (out.length >= max) break;
   }
   return out;
 }
+
+// Filings whose text the ingestion pipeline can read (US periodic/current
+// reports). Used to gate the "📖 Read" button — others have no readable digest.
+export const READABLE_FORMS = new Set(["10-K", "10-Q", "8-K", "10-K/A", "10-Q/A"]);
+export const isReadable = (f) => !!(f && READABLE_FORMS.has(f.form) && f.accession);
 
 // Assemble the storable sources object (saved to research_sources jsonb).
 export function buildSources({ news, filings, note } = {}, at = "") {

@@ -1,6 +1,15 @@
 # Phase 3.2 — Filing Intelligence Engine (Architecture)
 
-**Status: DESIGN — no code until approved.**
+**Status: BUILT 2026-06-13 (3.2a + 3.2b + L3 council-triggered ingestion).**
+Approved decisions (§6): map model = llama-3.1-8b-instant; scope cap = 8 chunks
+(MD&A + Risk Factors); trigger = three-tier (L1 XBRL facts auto · L2 manual Read
+buttons · L3 Council "Evidence Missing" → auto-read → re-research); India 3.3a =
+held for the usage-validation period. Shipped: `api/_edgar.js`, `api/facts.js`,
+`src/facts.js`, `api/ingest.js`, `src/filings.js`, migration `0010`, vercel.json
+`maxDuration`, research + Council injection, Workspace Fundamentals + Read button
++ Digest panels, Pipeline chips. 16 new pure tests (157 total green). Remaining
+(3.2c polish, optional): Mission Control staleness nudge; sync the offline
+validation-lab.mjs prompt copy with the new FUNDAMENTALS/FILING DIGEST rules.
 Date: 2026-06-12. Builds on Phase 3 / P3.1 (commit `acd6300`): the analyst can
 currently cite that a filing *exists* (form, date, link) but knows nothing of
 its contents. This phase makes the system actually **read** filings.

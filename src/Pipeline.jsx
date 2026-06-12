@@ -10,6 +10,8 @@ import { TickerID } from "./ui.jsx";
 import { BOARD_COLUMNS, STATE_LABEL, boardColumn, pipelineState, personalLens, scoreOpportunity } from "./pipeline.js";
 import { taskProgress, queuedTasks } from "./analyst.js";
 import { sourceCount } from "./sources.js";
+import { hasFacts } from "./facts.js";
+import { digestCount } from "./filings.js";
 import { opportunityReturn } from "./opportunities.js";
 
 const COL_TONE = { discovered: C.blue, researching: C.purple, council_review: C.gold, ready: C.green, archived: C.dim };
@@ -50,6 +52,8 @@ function Card({ opp, scores, live, busy, onResearch, onOpenWorkspace, onCouncil,
         {opp.status === "watching" && <Chip c={C.blue}>watching</Chip>}
         {opp.status === "logged" && <Chip c={C.green}>logged</Chip>}
         {sourceCount(opp.research_sources) > 0 && <Chip c={C.blue} title="Real news + filings cited by the last research run">🗞 {sourceCount(opp.research_sources)} sources</Chip>}
+        {hasFacts(opp.research_facts) && <Chip c={C.green} title="Hard XBRL fundamentals from SEC filings — deterministic, no AI">📊 XBRL facts</Chip>}
+        {digestCount(opp.research_digests) > 0 && <Chip c={C.green} title="Filing text read into a digest by the analyst">📖 {digestCount(opp.research_digests)} read</Chip>}
         {ret != null && <Chip c={ret >= 0 ? C.green : C.red}>{ret >= 0 ? "+" : ""}{ret.toFixed(1)}% since gen</Chip>}
       </div>
       {/* Score strip: the four components behind the composite */}

@@ -17,6 +17,8 @@ import { personalAlpha, mistakeCost } from "./alpha.js";
 import { thesisCalibration } from "./thesis.js";
 import { concentration, themeExposure, portfolioRiskFlags, correlationClusters } from "./portfolio.js";
 import { symbolFor } from "./stock.js";
+import { factsLine } from "./facts.js";
+import { digestLine, latestDigest } from "./filings.js";
 
 // ── Members ──────────────────────────────────────────────────────────────────
 // Seat order = order around the table (chairman at top, then clockwise).
@@ -245,6 +247,10 @@ export function buildCouncilContext({ holdings = [], journal = [], reviews = [],
     const tk = topic?.ticker ? topic.ticker.toUpperCase() : null;
     const opp = tk ? opportunities.find((o) => o.ticker === tk && o.status !== "dismissed") : null;
     if (opp) out.push(`THESIS ${opp.ticker} [${opp.thesis_type || "?"}, ${opp.confidence}%]: expects "${(opp.market_expectations || "").slice(0, 80)}" vs "${(opp.reality_hypothesis || "").slice(0, 80)}"`);
+    const fl = opp ? factsLine(opp.research_facts) : "";
+    if (fl) out.push(`FUNDAMENTALS (hard XBRL facts — cite, don't re-estimate): ${fl}`);
+    const dl = opp ? digestLine(latestDigest(opp.research_digests)) : "";
+    if (dl) out.push(`FILING (read from its own text — Marlowe can rely on this): ${dl}`);
     const w = tk ? watchlist.find((x) => x.ticker === tk && x.price != null) : null;
     if (w) out.push(`SNAP ${w.ticker}: ${symbolFor(w.currency)}${w.price} ${w.chg >= 0 ? "+" : ""}${w.chg}%, RSI ${w.rsi}${w.ema20 ? `, EMA20 ${w.ema20}` : ""}${w.ema200 ? `, EMA200 ${w.ema200}` : ""}`);
     return out.join("\n").slice(0, 1600);
@@ -290,6 +296,14 @@ export function buildCouncilContext({ holdings = [], journal = [], reviews = [],
   // Active theses / opportunities
   const opps = opportunities.filter((o) => o.status !== "dismissed").slice(0, 5);
   if (opps.length) out.push(`ACTIVE THESES: ${opps.map((o) => `${o.ticker} [${o.thesis_type || "?"}, conf ${o.confidence}%] expects "${(o.market_expectations || "").slice(0, 90)}" vs reality "${(o.reality_hypothesis || "").slice(0, 90)}"`).join(" · ")}`);
+
+  // Hard XBRL fundamentals for the topic ticker — the strongest evidence Veris
+  // and Sigma can use, cited as fact rather than re-estimated.
+  const topicOpp = topic?.ticker ? opportunities.find((o) => o.ticker === topic.ticker.toUpperCase()) : null;
+  const fl = topicOpp ? factsLine(topicOpp.research_facts) : "";
+  if (fl) out.push(`FUNDAMENTALS ${topicOpp.ticker} (hard XBRL facts — cite, don't re-estimate): ${fl}`);
+  const dl = topicOpp ? digestLine(latestDigest(topicOpp.research_digests)) : "";
+  if (dl) out.push(`FILING ${topicOpp.ticker} (read from its own text — answers Marlowe's EVIDENCE MISSING): ${dl}`);
 
   // Live snapshot — topic ticker first, else a small slice of the watchlist
   const snap = (w) => `${w.ticker} ${symbolFor(w.currency)}${w.price}${w.chg != null ? ` (${w.chg >= 0 ? "+" : ""}${w.chg}%)` : ""} RSI ${w.rsi}${w.ema20 ? ` EMA20 ${w.ema20}` : ""}${w.ema200 ? ` EMA200 ${w.ema200}` : ""}`;

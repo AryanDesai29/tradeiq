@@ -2,6 +2,9 @@ import { useState } from "react";
 import { THESIS_TYPES } from "./thesis.js";
 import { addEvidence, removeEvidence, researchScore, researchReady } from "./research.js";
 import { TASK_LABEL, makeTask, mergeTasks, queuedTasks, taskProgress } from "./analyst.js";
+import { factsTrends } from "./facts.js";
+import { isReadable } from "./sources.js";
+import { hasDigest } from "./filings.js";
 
 // ─── RESEARCH WORKSPACE 2.0 — active, not passive ──────────────────────────────
 // The original workspace (user edits thesis, logs evidence) plus the Research
@@ -12,7 +15,7 @@ import { TASK_LABEL, makeTask, mergeTasks, queuedTasks, taskProgress } from "./a
 // Journal → Reviews → Investor IQ → Personal Alpha with no translation.
 const RISK_LEVELS = ["low", "medium", "high"];
 
-export default function ResearchWorkspace({ opp, theme: C, onSave, onCreateTrade, onClose, onRunResearch, researching }) {
+export default function ResearchWorkspace({ opp, theme: C, onSave, onCreateTrade, onClose, onRunResearch, researching, onIngestFiling, ingestingAcc, onFilingEvent }) {
   const [d, setD] = useState(() => ({
     ...opp,
     evidence_log: Array.isArray(opp.evidence_log) ? opp.evidence_log : [],
@@ -21,6 +24,8 @@ export default function ResearchWorkspace({ opp, theme: C, onSave, onCreateTrade
   const [ev, setEv] = useState("");
   const [tq, setTq] = useState("");
   const [saved, setSaved] = useState(false);
+  const [openDig, setOpenDig] = useState({}); // expanded filing digests (accession → bool)
+  const toggleDig = (acc, dg) => setOpenDig((p) => { const next = !p[acc]; if (next) onFilingEvent?.("filing_digest_opened", { ticker: d.ticker, accession: acc, form: dg.form }); return { ...p, [acc]: next }; });
   const set = (k, v) => { setD((p) => ({ ...p, [k]: v })); setSaved(false); };
   const score = researchScore(d), ready = researchReady(d);
   const scoreCol = score >= 0.8 ? C.green : score >= 0.5 ? C.gold : C.muted;
@@ -157,6 +162,38 @@ export default function ResearchWorkspace({ opp, theme: C, onSave, onCreateTrade
             </div>
           )}
 
+          {/* ── FUNDAMENTALS — hard XBRL facts (P3.2a), zero-LLM, the strongest evidence ── */}
+          {(() => {
+            const t = factsTrends(d.research_facts);
+            if (!t || !t.revenue) return null;
+            const money = (v) => { const a = Math.abs(v); return a >= 1e9 ? `${(v / 1e9).toFixed(1)}B` : a >= 1e6 ? `${(v / 1e6).toFixed(0)}M` : `${Math.round(v)}`; };
+            const sp = (x) => x == null ? "—" : `${x >= 0 ? "+" : ""}${(x * 100).toFixed(0)}%`;
+            const mg = (m) => m?.latest == null ? null : { v: `${(m.latest * 100).toFixed(1)}%`, d: m.deltaYoY == null ? "" : `${m.deltaYoY >= 0 ? "▲" : "▼"}${Math.abs(m.deltaYoY * 100).toFixed(1)}pp` };
+            const Metric = ({ label, value, sub, col }) => (
+              <div style={{ flex: "1 1 110px", minWidth: 100 }}>
+                <div style={{ fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: "0.08em" }}>{label}</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: col || C.text }}>{value}</div>
+                {sub && <div style={{ fontSize: 10, color: C.muted }}>{sub}</div>}
+              </div>
+            );
+            const gm = mg(t.grossMargin), om = mg(t.operatingMargin), nm = mg(t.netMargin);
+            return (
+              <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 8, padding: 12, marginBottom: 12 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: C.green, textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8 }}>
+                  📊 Fundamentals <span style={{ color: C.dim, fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>· XBRL {t.revenue.form || "10-Q"} {t.revenue.end} · hard facts, not estimates</span>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+                  <Metric label="Revenue" value={money(t.revenue.val)} sub={`${sp(t.revenue.yoy)} YoY · ${sp(t.revenue.qoq)} QoQ`} col={C.text} />
+                  {gm && <Metric label="Gross margin" value={gm.v} sub={gm.d} />}
+                  {om && <Metric label="Op margin" value={om.v} sub={om.d} />}
+                  {nm && <Metric label="Net margin" value={nm.v} sub={nm.d} />}
+                  {t.rndIntensity != null && <Metric label="R&D / rev" value={`${(t.rndIntensity * 100).toFixed(0)}%`} />}
+                </div>
+                <div style={{ fontSize: 10, color: C.dim, marginTop: 6, lineHeight: 1.5 }}>Exact numbers from the company's SEC XBRL filings ({t.quarters}q of history) — deterministic, no AI in the loop.</div>
+              </div>
+            );
+          })()}
+
           {/* ── SOURCES — the real news + filings behind the last research run ── */}
           {d.research_sources && ((d.research_sources.news || []).length > 0 || (d.research_sources.filings || []).length > 0 || d.research_sources.filings_note) && (
             <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 8, padding: 12, marginBottom: 12 }}>
@@ -172,19 +209,64 @@ export default function ResearchWorkspace({ opp, theme: C, onSave, onCreateTrade
                   {n.publisher && <span style={{ color: C.muted, fontSize: 11, whiteSpace: "nowrap" }}>{n.publisher}</span>}
                 </div>
               ))}
-              {(d.research_sources.filings || []).map((f, i) => (
-                <div key={i} style={{ display: "flex", gap: 7, alignItems: "baseline", fontSize: 12, lineHeight: 1.55, marginBottom: 3 }}>
-                  <span style={{ color: C.gold, fontWeight: 700, whiteSpace: "nowrap" }}>{f.form}</span>
-                  <span style={{ color: C.dim, whiteSpace: "nowrap" }}>{f.filed}</span>
-                  {f.link
-                    ? <a href={f.link} target="_blank" rel="noreferrer" style={{ color: C.text, textDecoration: "underline", textDecorationColor: C.dim, flex: 1 }}>{f.title || "filing"}</a>
-                    : <span style={{ color: C.text, flex: 1 }}>{f.title || "filing"}</span>}
-                </div>
-              ))}
+              {(d.research_sources.filings || []).map((f, i) => {
+                const acc = (f.accession || "").replace(/[^0-9]/g, "");
+                const readable = isReadable(f);
+                const read = !!(acc && d.research_digests?.[acc]);
+                const busy = !!acc && ingestingAcc === acc;
+                const readFiling = async () => { const dg = await onIngestFiling?.(d, f); if (dg) setD((p) => ({ ...p, research_digests: { ...(p.research_digests || {}), [acc]: dg } })); };
+                return (
+                  <div key={i} style={{ display: "flex", gap: 7, alignItems: "baseline", fontSize: 12, lineHeight: 1.55, marginBottom: 3 }}>
+                    <span style={{ color: C.gold, fontWeight: 700, whiteSpace: "nowrap" }}>{f.form}</span>
+                    <span style={{ color: C.dim, whiteSpace: "nowrap" }}>{f.filed}</span>
+                    {f.link
+                      ? <a href={f.link} target="_blank" rel="noreferrer" style={{ color: C.text, textDecoration: "underline", textDecorationColor: C.dim, flex: 1 }}>{f.title || "filing"}</a>
+                      : <span style={{ color: C.text, flex: 1 }}>{f.title || "filing"}</span>}
+                    {readable && onIngestFiling && (
+                      read
+                        ? <span title="Filing read — digest below" style={{ color: C.green, fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>✓ Read</span>
+                        : <button onClick={readFiling} disabled={busy || !!ingestingAcc} title="Read this filing's text into a digest (~30s)"
+                            style={{ background: "transparent", border: `1px solid ${C.border}`, color: busy ? C.dim : C.blue, borderRadius: 5, padding: "1px 7px", fontSize: 11, fontWeight: 700, cursor: busy || ingestingAcc ? "default" : "pointer", whiteSpace: "nowrap" }}>
+                            {busy ? "Reading…" : "📖 Read"}</button>
+                    )}
+                  </div>
+                );
+              })}
               {!(d.research_sources.filings || []).length && d.research_sources.filings_note && <div style={{ fontSize: 11, color: C.muted, lineHeight: 1.5 }}>{d.research_sources.filings_note}</div>}
               <div style={{ fontSize: 10, color: C.dim, marginTop: 6, lineHeight: 1.5 }}>Headlines and filing dates are facts; contents are unread by the AI — open the links to verify before acting.</div>
             </div>
           )}
+
+          {/* ── FILING DIGESTS — what the analyst actually READ from the filing text (P3.2b) ── */}
+          {Object.entries(d.research_digests || {}).filter(([, dg]) => hasDigest(dg)).map(([acc, dg]) => {
+            const open = !!openDig[acc];
+            return (
+            <div key={acc} style={{ background: C.s1, border: `1px solid ${C.green}55`, borderRadius: 8, padding: 12, marginBottom: 12 }}>
+              <div onClick={() => toggleDig(acc, dg)} style={{ fontSize: 11, fontWeight: 700, color: C.green, textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span>📖 Filing Digest <span style={{ color: C.dim, fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>· {dg.form || "filing"}{dg.filed ? ` filed ${dg.filed}` : ""} · read from the filing's own text</span></span>
+                <span style={{ color: C.dim, fontWeight: 400 }}>{open ? "▲ collapse" : "▼ expand"}</span>
+              </div>
+              {dg.summary && <div style={{ fontSize: 12, color: C.text, lineHeight: 1.55, marginBottom: 8 }}>{dg.summary}</div>}
+              {open && <>
+              {[["Guidance", dg.guidance, C.blue], ["Revenue drivers", dg.revenue_drivers, C.text], ["Margin commentary", dg.margin_commentary, C.text], ["Risk changes", dg.risk_changes, C.gold], ["Red flags", dg.red_flags, C.red]].map(([label, arr, col]) =>
+                Array.isArray(arr) && arr.length ? (
+                  <div key={label} style={{ marginBottom: 6 }}>
+                    <div style={{ fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>{label}</div>
+                    {arr.map((x, j) => <div key={j} style={{ fontSize: 12, color: col, lineHeight: 1.5 }}>• {x}</div>)}
+                  </div>
+                ) : null)}
+              {Array.isArray(dg.quotes) && dg.quotes.length ? (
+                <div style={{ marginBottom: 6 }}>
+                  <div style={{ fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>Verbatim quotes</div>
+                  {dg.quotes.map((q, j) => <div key={j} style={{ fontSize: 12, color: C.muted, fontStyle: "italic", lineHeight: 1.5 }}>"{q.text}"{q.section ? <span style={{ color: C.dim, fontStyle: "normal" }}> — {q.section}</span> : null}</div>)}
+                </div>
+              ) : null}
+              {Array.isArray(dg.not_ingested) && dg.not_ingested.length ? (
+                <div style={{ fontSize: 10, color: C.dim, marginTop: 6, lineHeight: 1.5 }}>Sections not read (the AI must not claim the filing is silent on these): {dg.not_ingested.join("; ")}</div>
+              ) : null}
+              </>}
+            </div>
+          ); })}
 
           {/* Evidence log */}
           <div style={{ marginBottom: 12 }}>

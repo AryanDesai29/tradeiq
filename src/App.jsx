@@ -11,7 +11,10 @@ import { THESIS_TYPES, THESIS_FIELD_MAX, thesisComplete, missingThesisFields } f
 import { normalizeOpportunities } from "./opportunities.js";
 import { personalLens, lensBlock, pipelineState, scoreOpportunity } from "./pipeline.js";
 import { defaultTasks, mergeTasks, queuedTasks, tasksFromCouncil, applyFindings, normalizeBrief, researchDone } from "./analyst.js";
-import { buildSources, sourcesBlock } from "./sources.js";
+import { buildSources, sourcesBlock, isReadable } from "./sources.js";
+import { normalizeFacts, hasFacts, factsBlock } from "./facts.js";
+import { normalizeDigest, digestBlock, latestDigest, digestCount } from "./filings.js";
+import { trackFiling } from "./telemetry.js";
 import OpportunityPipeline from "./Pipeline.jsx";
 import ResearchWorkspace from "./ResearchWorkspace.jsx";
 import Council from "./Council.jsx";
@@ -241,6 +244,7 @@ function TradeIQ({ session }) {
   const [generatingOpps,setGeneratingOpps] = useState(false);
   const [researchOpp,setResearchOpp] = useState(null); // opportunity open in the Research Workspace
   const [researchingId,setResearchingId] = useState(null); // opportunity the AI analyst is researching right now
+  const [ingestingAcc,setIngestingAcc] = useState(null); // accession currently being read by the ingestion pipeline
   const [councilRequest,setCouncilRequest] = useState(null); // topic to auto-convene when the Council tab opens
   const [moreOpen,setMoreOpen] = useState(false); // mobile bottom-nav "More" sheet
   const [showAddH,setShowAddH]     = useState(false);
@@ -466,6 +470,10 @@ function TradeIQ({ session }) {
     try{ if(typeof o.id!=="string") await db.from("tradeiq_opportunities").update(patch).eq("id",o.id); }catch{}
   };
 
+  // Filing Impact Telemetry (P3.2, local-only) — records whether reading filings
+  // actually feeds research/council/decisions. Inspect via `tiqFilings()`.
+  const logFiling=(type,payload)=>{ try{ trackFiling(localStorage,userId,type,payload); }catch{} };
+
   // ── RESEARCH ANALYST ENGINE (P3) — run queued tasks through /api/research ──
   // Ensures the 6-question playbook exists, executes whatever is queued, applies
   // the findings + normalized brief, and advances the pipeline (all tasks done →
@@ -485,30 +493,92 @@ function TradeIQ({ session }) {
       const hdrs=token?{Authorization:`Bearer ${token}`}:undefined;
       // REAL sources (P3.1): dated news headlines + SEC filings index, fetched in
       // parallel, best-effort — a sources outage degrades the brief, never blocks it.
-      const [newsRes,filRes]=await Promise.all([
+      const [newsRes,filRes,factsRes]=await Promise.all([
         fetch(`/api/news?ticker=${encodeURIComponent(o.ticker)}`,{headers:hdrs}).then(r=>r.json()).catch(()=>null),
         fetch(`/api/filings?ticker=${encodeURIComponent(o.ticker)}`,{headers:hdrs}).then(r=>r.json()).catch(()=>null),
+        fetch(`/api/facts?ticker=${encodeURIComponent(o.ticker)}`,{headers:hdrs}).then(r=>r.json()).catch(()=>null),
       ]);
       const sources=buildSources({news:newsRes?.news,filings:filRes?.filings,note:filRes?.note},now);
+      // Hard XBRL fundamentals (P3.2a) — deterministic, zero-LLM; stored so the
+      // workspace and Council reuse them without refetching.
+      const facts=hasFacts(normalizeFacts(factsRes))?factsRes:null;
+      // Attribution: did this research run actually consume filing evidence?
+      const oppDigest=latestDigest(o.research_digests);
+      if(factsBlock(facts)) logFiling("research_used_facts",{ticker:o.ticker});
+      if(digestBlock(oppDigest)) logFiling("research_used_digest",{ticker:o.ticker});
       const res=await fetch("/api/research",{method:"POST",headers:{"Content-Type":"application/json",...(hdrs||{})},body:JSON.stringify({
         opportunity:{ticker:o.ticker,name:o.name,thesis_type:o.thesis_type,market_expectations:o.market_expectations,reality_hypothesis:o.reality_hypothesis,evidence:o.evidence,bull_case:o.bull_case,bear_case:o.bear_case,invalidation:o.invalidation,confidence:o.confidence,risk_level:o.risk_level},
         tasks:queued.map(({id,type,question})=>({id,type,question})),
         snapshot:{price:snap.price,chg:snap.chg,rsi:snap.rsi,ema20:snap.ema20,ema200:snap.ema200},
         lens:lensBlock(personalLens(journal)),
         sourcesText:sourcesBlock(sources),
+        factsText:factsBlock(facts),
+        digestText:digestBlock(latestDigest(o.research_digests)),
       })});
       const data=await res.json();
       if(data.error)throw new Error(data.error);
       tasks=applyFindings(tasks,data.findings,now);
       const brief=normalizeBrief(data.brief)||o.research_brief||null;
       const status=researchDone(tasks)?"council_review":(pre.status||o.status);
-      const patch={research_tasks:tasks,research_brief:brief,research_sources:sources,researched_at:now,status};
+      const patch={research_tasks:tasks,research_brief:brief,research_sources:sources,research_facts:facts,researched_at:now,status};
       patch.scores=scoreOpportunity({...o,...patch},personalLens(journal));
       setOpportunities(p=>p.map(x=>x.id===o.id?{...x,...patch}:x));
       try{ if(typeof o.id!=="string") await db.from("tradeiq_opportunities").update(patch).eq("id",o.id); }catch{}
       return patch;
     }catch(e){ alert(e.message); return null; }
     finally{ setResearchingId(null); }
+  };
+
+  // ── FILING INGESTION (P3.2b) — read a filing's text into a Filing Digest ──
+  // Filings are immutable, so a digest is produced once per accession and cached
+  // forever: first the opportunity's embedded copy, then the durable global table
+  // (cross-opportunity/cross-session), only then the expensive map-reduce call.
+  // Returns the normalized digest (and attaches it to the opportunity) or null.
+  const ingestFiling=async(o,filing,source="manual")=>{
+    const acc=String(filing?.accession||"").replace(/[^0-9]/g,"");
+    if(!acc){ alert("This filing has no accession to read."); return null; }
+    if(ingestingAcc)return null;
+    // Cache 1: already embedded on this opportunity.
+    const embedded=o.research_digests?.[acc];
+    if(embedded)return embedded;
+    setIngestingAcc(acc);
+    const attach=async(digest,manifest)=>{
+      const map={...(o.research_digests||{}),[acc]:digest};
+      const patch={research_digests:map};
+      setOpportunities(p=>p.map(x=>x.id===o.id?{...x,...patch}:x));
+      setResearchOpp(p=>p&&p.id===o.id?{...p,...patch}:p);
+      try{ if(typeof o.id!=="string") await db.from("tradeiq_opportunities").update(patch).eq("id",o.id); }catch{}
+      // Telemetry: who triggered the read + which sections it read/skipped.
+      logFiling(source==="council"?"filing_read_council":"filing_read_manual",{
+        ticker:o.ticker,accession:acc,form:digest.form||filing.form||"",
+        sectionsRead:(manifest?.ingested||[]).map(s=>s.section).filter(Boolean),
+        sectionsSkipped:manifest?.skipped||digest.not_ingested||[],
+      });
+      return digest;
+    };
+    try{
+      let token=null; if(SUPABASE_READY){try{const {data}=await db.auth.getSession();token=data.session?.access_token??null;}catch{}}
+      // Cache 2: durable global table — a filing read for any opportunity counts.
+      if(SUPABASE_READY&&session){
+        try{
+          const {data:rows}=await db.from("tradeiq_filing_digests").select("digest,sections_ingested").eq("accession",acc).limit(1);
+          const cached=normalizeDigest(rows?.[0]?.digest,{accession:acc,form:filing.form,filed:filing.filed});
+          if(cached)return await attach(cached,rows?.[0]?.sections_ingested);
+        }catch{}
+      }
+      const hdrs=token?{Authorization:`Bearer ${token}`}:undefined;
+      const res=await fetch("/api/ingest",{method:"POST",headers:{"Content-Type":"application/json",...(hdrs||{})},body:JSON.stringify({ticker:o.ticker,accession:acc})});
+      const data=await res.json();
+      if(data.error)throw new Error(data.error);
+      const digest=normalizeDigest(data.digest,data.meta);
+      if(!digest)throw new Error("The filing was read but nothing substantive could be extracted.");
+      // Write-through to the durable cache (upsert = permanent, idempotent).
+      if(SUPABASE_READY&&session){
+        try{ await db.from("tradeiq_filing_digests").upsert({user_id:userId,ticker:o.ticker,cik:data.meta?.cik??null,accession:acc,form:data.meta?.form||filing.form||null,filed:data.meta?.filed||filing.filed||null,digest,sections_ingested:data.sections_ingested||null,tokens_used:data.tokens_used??null},{onConflict:"user_id,accession"}); }catch{}
+      }
+      return await attach(digest,data.sections_ingested);
+    }catch(e){ alert(e.message); return null; }
+    finally{ setIngestingAcc(null); }
   };
 
   // Pipeline card → Council tab, topic pre-convened. The title is deterministic
@@ -518,12 +588,26 @@ function TradeIQ({ session }) {
     setTab("council");
   };
 
+  // Latest versions of the async helpers, callable from the stable verdict
+  // callback without widening its deps (which would churn its identity).
+  const ingestFnRef=useRef(); ingestFnRef.current=ingestFiling;
+  const researchFnRef=useRef(); researchFnRef.current=researchOpportunity;
+  // Accessions already auto-read this session — guards the L3 loop against
+  // re-triggering (incl. React strict-mode double-invocation of the updater).
+  const autoReadRef=useRef(new Set());
+  const loggedVerdictRef=useRef(new Set()); // de-dupes verdict-change telemetry per app session
+
   // ── COUNCIL → PIPELINE (P4) — verdicts drive the state machine ──
   // Marlowe's EVIDENCE MISSING, Popper's RED FLAG REVIEW and the verdict's
   // required_research become queued tasks and reopen research; a clean verdict
   // promotes the idea to Ready. Idempotent: tasks dedupe by content id, so a
   // cached-session replay changes nothing. Runs inside the state updater to
   // avoid stale closures when verdicts land mid-update.
+  //
+  // L3 AUTONOMOUS LOOP (P3.2b): when the Council demands evidence and the topic
+  // has an unread 10-Q/10-K, the analyst reads the filing itself, then re-runs
+  // research with the digest — Evidence Missing → Read Filing → Research Updated,
+  // with no human step. One auto-read per accession per session.
   const handleCouncilVerdict=useCallback((topic,sess)=>{
     const tk=(topic?.ticker||"").trim().toUpperCase();
     if(!tk||!sess?.verdict)return;
@@ -534,15 +618,41 @@ function TradeIQ({ session }) {
       const tasks=mergeTasks(Array.isArray(opp.research_tasks)?opp.research_tasks:[],tasksFromCouncil(sess,now));
       const demands=sess.evidence_hold?.raised||sess.red_flags?.raised||(sess.verdict.required_research||[]).length>0;
       const status=demands&&!researchDone(tasks)?"researching":"ready";
-      const patch={council_verdict:sess.verdict.recommendation,council_confidence:sess.verdict.confidence,research_tasks:tasks,status};
+      const rec=sess.verdict.recommendation;
+      const patch={council_verdict:rec,council_confidence:sess.verdict.confidence,research_tasks:tasks,status};
       patch.scores=scoreOpportunity({...opp,...patch},personalLens(journal));
       try{ if(typeof opp.id!=="string") db.from("tradeiq_opportunities").update(patch).eq("id",opp.id).then(()=>{}); }catch{}
+
+      // Telemetry: a verdict that moved while a filing digest was on the table —
+      // the sharpest signal that reading the filing changed the decision.
+      const prior=opp.council_verdict;
+      if(prior&&prior!==rec&&digestCount(opp.research_digests)>0){
+        const vk=`${opp.id}|${prior}>${rec}`;
+        if(!loggedVerdictRef.current.has(vk)){ loggedVerdictRef.current.add(vk); logFiling("council_verdict_changed_after_filing",{ticker:opp.ticker,from:prior,to:rec}); }
+      }
+
+      // L3: pick the most recent readable filing the Council hasn't seen read yet.
+      if(demands){
+        const readable=((opp.research_sources?.filings)||[]).filter(isReadable)
+          .sort((a,b)=>String(a.filed||"").localeCompare(String(b.filed||"")));
+        const target=readable[readable.length-1];
+        const acc=target?.accession;
+        if(acc&&!(opp.research_digests?.[acc])&&!autoReadRef.current.has(acc)){
+          autoReadRef.current.add(acc);
+          const oppNow={...opp,...patch};
+          queueMicrotask(()=>{(async()=>{
+            const d=await ingestFnRef.current?.(oppNow,target,"council");
+            if(d) await researchFnRef.current?.({...oppNow,research_digests:{...(oppNow.research_digests||{}),[acc]:d}});
+          })();});
+        }
+      }
       return prev.map(x=>x.id===opp.id?{...x,...patch}:x);
     });
   },[journal]);
   // Close the loop: an opportunity → prefilled trade form (thesis already filled),
   // so "the AI builds the thesis, Aryan critiques", then logs it.
   const critiqueAndLog=(o)=>{
+    if(digestCount(o.research_digests)>0) logFiling("trade_created_after_filing",{ticker:o.ticker}); // decision followed a filing review
     setNewT(p=>({...p,ticker:o.ticker,meta:{symbol:o.ticker,name:o.name||o.ticker,exchange:"",currency:o.currency||(marketTab==="india"?"INR":"USD"),sector:null,industry:null},side:"BUY",thesisType:o.thesis_type||"",expectations:(o.market_expectations||"").slice(0,THESIS_FIELD_MAX),reality:(o.reality_hypothesis||"").slice(0,THESIS_FIELD_MAX),evidence:o.evidence||"",bearCase:(o.bear_case||"").slice(0,THESIS_FIELD_MAX),invalidation:(o.invalidation||"").slice(0,THESIS_FIELD_MAX),confidence:o.confidence??60}));
     setOppStatus(o.id,"logged"); setShowAddT(true); setTab("journal");
   };
@@ -948,7 +1058,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
       <div key={tab} className="tab-in tiq-main" style={{padding:18,maxWidth:1240,margin:"0 auto"}}>
         {tab==="council"&&<div className="tiq-bleed tiq-fit-full" style={{minHeight:480}}><Council theme={C} db={db} supabaseReady={SUPABASE_READY} userId={userId} holdings={holdings} journal={journal} reviews={Object.values(reviews)} opportunities={opportunities} watchlist={[...US_WATCHLIST,...INDIA_WATCHLIST]} request={councilRequest} onRequestConsumed={()=>setCouncilRequest(null)} onVerdict={handleCouncilVerdict}/></div>}{tab==="perf"&&<Performance journal={journal} reviews={Object.values(reviews)} theme={C}/>}{tab==="opps"&&Opportunities()}{tab==="dash"&&Dashboard()}{tab==="ai"&&AIChat()}{tab==="scanner"&&Scanner()}{tab==="chart"&&<div className="tiq-bleed tiq-fit-full"><ChartView ticker={chartTicker} market={marketTab} onClose={null}/></div>}{tab==="strategies"&&StrategiesTab()}{tab==="journal"&&JournalTab()}{tab==="learn"&&Learn()}
       </div>
-      {researchOpp&&<ResearchWorkspace opp={researchOpp} theme={C} onSave={saveResearch} onCreateTrade={(o)=>{critiqueAndLog(o);setResearchOpp(null);}} onClose={()=>setResearchOpp(null)} onRunResearch={researchOpportunity} researching={researchingId===researchOpp.id}/>}
+      {researchOpp&&<ResearchWorkspace opp={researchOpp} theme={C} onSave={saveResearch} onCreateTrade={(o)=>{critiqueAndLog(o);setResearchOpp(null);}} onClose={()=>setResearchOpp(null)} onRunResearch={researchOpportunity} researching={researchingId===researchOpp.id} onIngestFiling={ingestFiling} ingestingAcc={ingestingAcc} onFilingEvent={logFiling}/>}
 
       {/* ── MOBILE BOTTOM NAV — the 4 primary destinations + More sheet.
           Desktop never sees this (display:none above 700px). ── */}
