@@ -73,7 +73,7 @@ export default function Performance({ journal = [], reviews = [], opportunities 
           <div style={{ fontFamily: C.display, fontWeight: 800, fontSize: 17 }}>🧪 Alpha Lab</div>
           <div style={{ fontSize: T.caption, color: C.muted, marginTop: 2 }}>What makes you money · what makes you a better investor · is the AI helping</div>
         </div>
-        <div style={{ fontSize: 11, color: C.muted }}>{p.trades} closed · {p.open} open · {p.withRisk} with a stop (R valid)</div>
+        <div style={{ fontSize: 12, color: C.muted }}>{p.trades} closed · {p.open} open · {p.withRisk} with a stop (R valid)</div>
       </div>
 
       {/* Headline risk-normalised metrics (currency-agnostic) */}
@@ -93,7 +93,7 @@ export default function Performance({ journal = [], reviews = [], opportunities 
           <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderLeft: `3px solid ${accColor}`, borderRadius: 8, padding: 16, marginBottom: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
               <div style={{ fontFamily: C.display, fontWeight: 800, fontSize: 14 }}><Term k="investorIq">Investor IQ</Term> <span style={{ fontSize: T.caption, fontWeight: 400, color: C.dim }}>· thesis accuracy, not P&amp;L</span></div>
-              <div style={{ fontSize: 11, color: C.muted }}>{iq.n} thesis{iq.n !== 1 ? "es" : ""} judged</div>
+              <div style={{ fontSize: 12, color: C.muted }}>{iq.n} thesis{iq.n !== 1 ? "es" : ""} judged</div>
             </div>
             <div style={{ display: "flex", gap: 20, flexWrap: "wrap", alignItems: "center" }}>
               <div>
@@ -125,7 +125,7 @@ export default function Performance({ journal = [], reviews = [], opportunities 
 
       {/* Equity curve in R */}
       <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 8, padding: 16, marginBottom: 14 }}>
-        <div style={{ fontFamily: C.display, fontWeight: 700, fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", color: C.muted, marginBottom: 10 }}>Equity Curve (cumulative R)</div>
+        <div style={{ fontFamily: C.display, fontWeight: 700, fontSize: 12, letterSpacing: "0.14em", textTransform: "uppercase", color: C.muted, marginBottom: 10 }}>Equity Curve (cumulative R)</div>
         <svg viewBox={`0 0 ${cw} ${ch}`} preserveAspectRatio="none" style={{ width: "100%", height: 90, display: "block" }}>
           <line x1="0" y1={zeroY} x2={cw} y2={zeroY} stroke={C.border} strokeWidth="0.5" />
           <polyline points={pts} fill="none" stroke={curve[curve.length - 1] >= 0 ? C.green : C.red} strokeWidth="1.2" vectorEffect="non-scaling-stroke" />
@@ -139,7 +139,7 @@ export default function Performance({ journal = [], reviews = [], opportunities 
           <div key={b.currency} style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 8, padding: 16 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
               <span style={{ fontFamily: C.display, fontWeight: 800, fontSize: 14 }}>{b.symbol} {b.currency} trades</span>
-              <span style={{ fontSize: 11, color: C.muted }}>{b.trades} closed</span>
+              <span style={{ fontSize: 12, color: C.muted }}>{b.trades} closed</span>
             </div>
             <div style={{ marginBottom: 12 }}><Money value={b.net} currency={b.currency} signed size={24} /><span style={{ fontSize: T.caption, color: C.muted, fontWeight: 400, marginLeft: 6 }}>net P&L</span></div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
@@ -157,7 +157,7 @@ export default function Performance({ journal = [], reviews = [], opportunities 
       {/* Recurring mistakes from AI trade reviews — the Personal Alpha seed */}
       {mistakes.length > 0 && (
         <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 8, padding: 16, marginBottom: 14 }}>
-          <div style={{ fontFamily: C.display, fontWeight: 700, fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", color: C.muted, marginBottom: 10 }}>Recurring Mistakes <span style={{ color: C.dim }}>· from {reviews.length} reviewed trade{reviews.length !== 1 ? "s" : ""}</span></div>
+          <div style={{ fontFamily: C.display, fontWeight: 700, fontSize: 12, letterSpacing: "0.14em", textTransform: "uppercase", color: C.muted, marginBottom: 10 }}>Recurring Mistakes <span style={{ color: C.dim }}>· from {reviews.length} reviewed trade{reviews.length !== 1 ? "s" : ""}</span></div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {mistakes.slice(0, 8).map((m) => (
               <div key={m.tag} style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -180,7 +180,7 @@ export default function Performance({ journal = [], reviews = [], opportunities 
 
       {/* Monthly returns per currency */}
       <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 8, padding: 16 }}>
-        <div style={{ fontFamily: C.display, fontWeight: 700, fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", color: C.muted, marginBottom: 10 }}>Monthly Returns</div>
+        <div style={{ fontFamily: C.display, fontWeight: 700, fontSize: 12, letterSpacing: "0.14em", textTransform: "uppercase", color: C.muted, marginBottom: 10 }}>Monthly Returns</div>
         <div className="tiq-scroll">
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: T.data }}>
             <thead><tr>{["Month", ...cur.map((b) => `${b.symbol} ${b.currency}`)].map((h) => (

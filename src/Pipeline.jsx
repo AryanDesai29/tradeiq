@@ -26,7 +26,7 @@ const Act = ({ onClick, color = C.accent, solid, disabled, children }) => (
 const ScoreKv = ({ label, value, color }) => (
   <div style={{ textAlign: "center", minWidth: 0 }}>
     <div style={{ fontFamily: C.display, fontWeight: 800, fontSize: 13, color: color || C.text }}>{value == null ? "—" : value}</div>
-    <div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.muted }}>{label}</div>
+    <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.muted }}>{label}</div>
   </div>
 );
 
@@ -43,7 +43,7 @@ function Card({ opp, scores, live, busy, onResearch, onOpenWorkspace, onCouncil,
         <TickerID size="row" symbol={opp.ticker} name={opp.name} currency={opp.currency} nameMax={80} />
         <div style={{ textAlign: "right" }}>
           <div style={{ fontFamily: C.display, fontWeight: 800, fontSize: 19, color: compCol, lineHeight: 1 }}>{scores.composite}</div>
-          <div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.muted }}>Score</div>
+          <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.muted }}>Score</div>
         </div>
       </div>
       <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 8 }}>
@@ -120,7 +120,7 @@ export default function OpportunityPipeline({ opportunities = [], liveData = {},
       <style>{`
         .pipe-board{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(265px,1fr);gap:12px;overflow-x:auto;-webkit-overflow-scrolling:touch;align-items:start;padding-bottom:6px;scroll-snap-type:x proximity;}
         .pipe-board>section{scroll-snap-align:start;}
-        @media(max-width:700px){
+        @media(max-width:767px){
           /* phones: the board stacks — a 5-column sideways scroll is unusable one-handed */
           .pipe-board{grid-auto-flow:row;grid-auto-columns:unset;grid-template-columns:1fr;overflow-x:visible;}
           .pipe-empty-hint{display:none;}
@@ -129,7 +129,7 @@ export default function OpportunityPipeline({ opportunities = [], liveData = {},
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6, flexWrap: "wrap", gap: 8 }}>
         <div>
           <div style={{ fontFamily: C.display, fontWeight: 800, fontSize: 17 }}>Opportunity Pipeline</div>
-          <div style={{ fontSize: 11, color: C.muted }}>The AI finds and researches — you decide. Ranked by composite score{lens.bestEdge ? ` · personalized to your proven edge (${lens.bestEdge.key})` : ` · personalizes after ${Math.max(0, 5 - lens.closed)} more closed trades`}.</div>
+          <div style={{ fontSize: 12, color: C.muted }}>The AI finds and researches — you decide. Ranked by composite score{lens.bestEdge ? ` · personalized to your proven edge (${lens.bestEdge.key})` : ` · personalizes after ${Math.max(0, 5 - lens.closed)} more closed trades`}.</div>
         </div>
         <button className="tiq-btn" disabled={generating} onClick={onGenerate} style={{ background: generating ? C.muted + "30" : `linear-gradient(135deg,${C.green},${C.green}d8)`, border: "none", borderRadius: 8, color: generating ? C.muted : C.bg, fontFamily: C.display, fontWeight: 700, fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", padding: "9px 17px", cursor: generating ? "not-allowed" : "pointer" }}>{generating ? "Discovering…" : `✨ Discover from ${marketTab === "us" ? "US" : "India"} watchlist`}</button>
       </div>

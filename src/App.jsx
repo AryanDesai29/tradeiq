@@ -21,6 +21,7 @@ import Council from "./Council.jsx";
 import MissionControl from "./MissionControl.jsx";
 import { createClient } from "@supabase/supabase-js";
 import { T } from "./theme.js";
+import { responsiveCss } from "./responsive.js";
 import { TickerID, Money, Term } from "./ui.jsx";
 // Currency/exchange logic lives ONLY in ./stock.js (client) and ./api/_market.js
 // (server). Components read stock.currency — they never parse tickers.
@@ -100,11 +101,10 @@ const GS = `
   .tiq-btn{position:relative;overflow:hidden;}
   .tiq-btn::after{content:'';position:absolute;top:0;left:-70%;width:45%;height:100%;background:linear-gradient(100deg,transparent,#ffffff24,transparent);transform:skewX(-20deg);transition:left 0.5s ease;pointer-events:none;}
   .tiq-btn:hover::after{left:130%;}
-  @media(max-width:880px){.tiq-2col{grid-template-columns:1fr!important;}}
-  @media(max-width:600px){.tiq-2col{grid-template-columns:1fr!important;}}
+  @media(max-width:1023px){.tiq-2col{grid-template-columns:1fr!important;}}
   .tiq-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%;}
   .tiq-scroll table{min-width:560px;}
-  @media(max-width:600px){.tiq-scroll table{min-width:520px;}}
+  @media(max-width:767px){.tiq-scroll table{min-width:520px;}}
   /* ── MOBILE PASS ──────────────────────────────────────────────── */
   html{-webkit-text-size-adjust:100%;}
   .tiq-tabs{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;scroll-snap-type:x proximity;}
@@ -120,8 +120,8 @@ const GS = `
   .tiq-bn-item{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:none;border:none;border-radius:10px;color:${C.muted};cursor:pointer;padding:5px 2px;min-height:50px;}
   .tiq-bn-item.on{color:${C.accent};background:${C.accent}14;}
   .tiq-bn-ico{font-size:19px;line-height:1;}
-  .tiq-bn-lbl{font-family:${C.display};font-weight:700;font-size:10px;letter-spacing:0.04em;}
-  @media(max-width:700px){
+  .tiq-bn-lbl{font-family:${C.display};font-weight:700;font-size:12px;letter-spacing:0.02em;}
+  @media(max-width:767px){
     .tiq-main{padding:12px 10px calc(86px + env(safe-area-inset-bottom))!important;}
     .tiq-bleed{margin:-12px -10px;}
     .tiq-head{padding:8px max(10px,env(safe-area-inset-right)) 8px max(10px,env(safe-area-inset-left))!important;}
@@ -134,9 +134,9 @@ const GS = `
     input,select,textarea{font-size:16px!important;}
   }
   @media(pointer:coarse){
-    .tiq-btn{min-height:40px;}
+    .tiq-btn{min-height:44px;}
     .tiq-tab{min-height:46px;}
-    .qbtn{min-height:40px;}
+    .qbtn{min-height:44px;}
   }
   @keyframes sheetUp{from{transform:translateY(40px);opacity:0}to{transform:translateY(0);opacity:1}}
   @media (prefers-reduced-motion: reduce){
@@ -147,7 +147,7 @@ const GS = `
 // ─── REUSABLE COMPONENTS ─────────────────────────────────────────
 const Tag=({c,children})=>(<span style={{display:"inline-block",fontSize:T.micro,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",padding:"2.5px 9px",borderRadius:999,background:c+"16",color:c,border:`1px solid ${c}30`,marginRight:4,whiteSpace:"nowrap"}}>{children}</span>);
 const Card=({children,style={},glow})=>(<div className="tiq-card" style={{background:`linear-gradient(180deg,${C.s2}66,transparent 56px),${C.s1}`,border:`1px solid ${glow?C.accent+"40":C.border}`,borderRadius:12,padding:16,marginBottom:14,boxShadow:"inset 0 1px 0 #ffffff09, 0 6px 20px #00000040",...style}}>{children}</div>);
-const CT=({children})=>(<div style={{fontFamily:C.display,fontWeight:700,fontSize:10,letterSpacing:"0.16em",textTransform:"uppercase",color:C.muted,marginBottom:12,display:"flex",alignItems:"center",gap:7}}><span style={{width:14,height:2,background:C.accent,borderRadius:1,flexShrink:0}}/>{children}</div>);
+const CT=({children})=>(<div style={{fontFamily:C.display,fontWeight:700,fontSize: 12,letterSpacing:"0.16em",textTransform:"uppercase",color:C.muted,marginBottom:12,display:"flex",alignItems:"center",gap:7}}><span style={{width:14,height:2,background:C.accent,borderRadius:1,flexShrink:0}}/>{children}</div>);
 const Btn=({children,onClick,color=C.accent,solid,small,style={}})=>(<button className="tiq-btn" onClick={onClick} style={{background:solid?`linear-gradient(135deg,${color},${color}d8)`:color+"14",border:solid?"none":`1px solid ${color}3a`,borderRadius:8,color:solid?C.bg:color,fontFamily:C.display,fontWeight:700,fontSize:small?T.caption:12,letterSpacing:"0.08em",textTransform:"uppercase",padding:small?"5px 11px":"9px 17px",whiteSpace:"nowrap",boxShadow:solid?`0 4px 16px ${color}38`:"none",...style}}>{children}</button>);
 const Inp=({label,value,onChange,placeholder,type="text",style={}})=>(<div>{label&&<div style={{fontSize:T.caption,color:C.muted,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.1em",fontWeight:600}}>{label}</div>}<input className="tiq-input" type={type} value={value} onChange={onChange} placeholder={placeholder} style={{background:C.s2,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 12px",color:C.text,fontFamily:C.mono,fontSize:T.data,width:"100%",transition:"border-color 0.18s ease,box-shadow 0.18s ease",...style}}/></div>);
 const Sel=({label,value,onChange,options})=>(<div>{label&&<div style={{fontSize:T.caption,color:C.muted,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.1em",fontWeight:600}}>{label}</div>}<select className="tiq-input" value={value} onChange={onChange} style={{background:C.s2,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 12px",color:C.text,fontFamily:C.mono,fontSize:T.data,width:"100%",cursor:"pointer"}}>{options.map(o=><option key={o}>{o}</option>)}</select></div>);
@@ -767,7 +767,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
             </div>
             <div style={{display:"flex",gap:8,alignItems:"center"}}><Btn solid color={hValid?C.accent:C.muted} onClick={addHolding}>{syncStatus==="syncing"?<Spinner/>:"Save"}</Btn><Btn small color={C.muted} onClick={()=>{setShowAddH(false);setNewH(p=>({...p,meta:null}));}}>Cancel</Btn>{newH.ticker&&!newH.meta&&<span style={{fontSize:T.caption,color:C.gold}}>↑ Pick a ticker from the dropdown</span>}{newH.meta&&<span style={{fontSize:T.caption,color:C.muted}}>{newH.meta.name} · {newH.meta.exchange} · {newH.meta.currency}</span>}</div>
           </div>)}
-          {holdings.length===0?(<div style={{textAlign:"center",padding:"28px 10px",color:C.muted}}><div style={{fontSize:26,marginBottom:8}}>📂</div><div style={{fontFamily:C.display,fontWeight:700,color:C.text,marginBottom:5}}>No holdings yet</div><div style={{fontSize:11,lineHeight:1.6}}>Add what you own on Vested.<br/>Syncs to all your devices instantly.</div></div>):(
+          {holdings.length===0?(<div style={{textAlign:"center",padding:"28px 10px",color:C.muted}}><div style={{fontSize:26,marginBottom:8}}>📂</div><div style={{fontFamily:C.display,fontWeight:700,color:C.text,marginBottom:5}}>No holdings yet</div><div style={{fontSize: 12,lineHeight:1.6}}>Add what you own on Vested.<br/>Syncs to all your devices instantly.</div></div>):(
           <div className="tiq-scroll"><table style={{width:"100%",borderCollapse:"collapse",fontSize:T.data}}><thead><tr>{["Ticker","Shares","Avg","Now","P&L","Update",""].map(h=>(<th key={h} style={{textAlign:"left",padding:"6px 5px",fontSize:T.caption,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:C.muted,borderBottom:`1px solid ${C.border}`}}>{h}</th>))}</tr></thead>
           <tbody>{holdings.map(h=>{const pnl=(h.price-h.avgCost)*h.shares;const pp=((h.price-h.avgCost)/h.avgCost)*100;const sp=WATCHLIST.find(w=>w.ticker===h.ticker)?.spark;const sym=symbolFor(h.currency);return(
             <tr key={h.id} className="tiq-row" style={{cursor:"pointer"}} onClick={()=>quickAsk(`Analyse my ${h.ticker}: ${h.shares} shares avg ${sym}${h.avgCost} now ${sym}${h.price}. Hold, add, or sell?`)}>
@@ -807,10 +807,10 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
       </div>
       <div style={{flex:1,overflowY:"auto",paddingRight:4,marginBottom:10}}>
         {msgs.map((m,i)=>(<div key={i} className="msg-in" style={{display:"flex",gap:10,marginBottom:12,flexDirection:m.role==="user"?"row-reverse":"row",alignItems:"flex-start"}}>
-          <div style={{width:29,height:29,borderRadius:9,background:m.role==="user"?C.blue+"25":`linear-gradient(135deg,${C.accent}2e,${C.purple}22)`,border:`1px solid ${m.role==="user"?C.blue:C.accent}40`,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:C.display,fontWeight:800,fontSize:11,color:m.role==="user"?C.blue:C.accent,flexShrink:0,boxShadow:m.role==="user"?"none":`0 0 14px ${C.accent}22`}}>{m.role==="user"?"U":"IQ"}</div>
+          <div style={{width:29,height:29,borderRadius:9,background:m.role==="user"?C.blue+"25":`linear-gradient(135deg,${C.accent}2e,${C.purple}22)`,border:`1px solid ${m.role==="user"?C.blue:C.accent}40`,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:C.display,fontWeight:800,fontSize: 12,color:m.role==="user"?C.blue:C.accent,flexShrink:0,boxShadow:m.role==="user"?"none":`0 0 14px ${C.accent}22`}}>{m.role==="user"?"U":"IQ"}</div>
           <div style={{background:m.role==="user"?C.blue+"18":C.s2,border:`1px solid ${m.role==="user"?C.blue+"30":C.border}`,borderRadius:m.role==="user"?"12px 12px 4px 12px":"12px 12px 12px 4px",padding:"10px 14px",maxWidth:"min(640px, 86%)",fontSize:T.body,lineHeight:1.7,color:C.text,whiteSpace:"pre-wrap",fontFamily:C.mono}}>{m.role==="assistant"?fmtMsg(m.content):m.content}</div>
         </div>))}
-        {aiLoading&&(<div style={{display:"flex",gap:10,alignItems:"flex-start"}}><div style={{width:27,height:27,borderRadius:6,background:C.accent+"18",border:`1px solid ${C.accent}30`,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:C.display,fontWeight:700,fontSize:11,color:C.accent}}>AI</div><div style={{background:C.s2,border:`1px solid ${C.border}`,borderRadius:"12px 12px 12px 4px",padding:"12px 14px"}}><Dots/></div></div>)}
+        {aiLoading&&(<div style={{display:"flex",gap:10,alignItems:"flex-start"}}><div style={{width:27,height:27,borderRadius:6,background:C.accent+"18",border:`1px solid ${C.accent}30`,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:C.display,fontWeight:700,fontSize: 12,color:C.accent}}>AI</div><div style={{background:C.s2,border:`1px solid ${C.border}`,borderRadius:"12px 12px 12px 4px",padding:"12px 14px"}}><Dots/></div></div>)}
         <div ref={chatEnd}/>
       </div>
       <div style={{borderTop:`1px solid ${C.border}`,paddingTop:10}}>
@@ -865,7 +865,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
   // ── SCANNER ──
   const Scanner=()=>{const calcCur=marketTab==="india"?"INR":"USD";const calcSym=symbolFor(calcCur);return(<div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
-      <div><div style={{fontFamily:C.display,fontWeight:700,fontSize:15,marginBottom:2}}>Strategy Scanner</div><div style={{fontSize:11,color:C.muted}}>Screening {marketTab==="us"?"US (NYSE/NASDAQ)":"Indian (NSE)"} — {WATCHLIST.length} stocks</div></div>
+      <div><div style={{fontFamily:C.display,fontWeight:700,fontSize:15,marginBottom:2}}>Strategy Scanner</div><div style={{fontSize: 12,color:C.muted}}>Screening {marketTab==="us"?"US (NYSE/NASDAQ)":"Indian (NSE)"} — {WATCHLIST.length} stocks</div></div>
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
         <Btn small color={marketTab==="us"?C.blue:C.muted} onClick={()=>setMarketTab("us")}>🇺🇸 US</Btn>
         <Btn small color={marketTab==="india"?C.gold:C.muted} onClick={()=>setMarketTab("india")}>🇮🇳 India</Btn>
@@ -898,7 +898,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
   // ── STRATEGIES ──
   const StrategiesTab=()=>(<div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-      <div style={{fontSize:11,color:C.muted}}>Click any strategy for an AI deep-dive.</div>
+      <div style={{fontSize: 12,color:C.muted}}>Click any strategy for an AI deep-dive.</div>
       <Btn color={C.gold} onClick={()=>quickAsk("Design a new trading strategy for US tech stocks June 2026. Give: name, type, exact entry/exit rules, stop method, win rate estimate, best market conditions, and 3 example setups.")}>+ Build New Strategy</Btn>
     </div>
     {STRATEGIES.map(s=>(<Card key={s.id} style={{borderLeft:`3px solid ${s.color}`,cursor:"pointer"}} onClick={()=>quickAsk(`Deep dive on ${s.name}: exact entry/exit rules, best market conditions, common mistakes, 3 current stock examples, improvement tips for a ₹5,000 beginner.`)}>
@@ -932,7 +932,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
   // ── JOURNAL ──
   const JournalTab=()=>(<div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-      <div><div style={{fontFamily:C.display,fontWeight:700,fontSize:15}}>Trade Journal</div><div style={{fontSize:11,color:C.muted}}>Every trade logged & synced across all devices.</div></div>
+      <div><div style={{fontFamily:C.display,fontWeight:700,fontSize:15}}>Trade Journal</div><div style={{fontSize: 12,color:C.muted}}>Every trade logged & synced across all devices.</div></div>
       <Btn solid color={C.accent} onClick={()=>setShowAddT(p=>!p)}>{showAddT?"✕ Cancel":"+ Log Trade"}</Btn>
     </div>
     {showAddT&&(<Card glow>
@@ -953,7 +953,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
       {/* THESIS (P2.75) — required. Litman: explicit market-expectation vs reality is the edge. */}
       <div style={{marginBottom:10,background:C.s2,border:`1px solid ${C.border}`,borderRadius:6,padding:12}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:6}}>
-          <div style={{fontSize:10,fontWeight:700,color:C.accent,textTransform:"uppercase",letterSpacing:"0.1em"}}>Thesis · required</div>
+          <div style={{fontSize: 12,fontWeight:700,color:C.accent,textTransform:"uppercase",letterSpacing:"0.1em"}}>Thesis · required</div>
           <div style={{fontSize:T.caption,color:C.muted}}>Edge = reality diverging from what the market expects</div>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10,marginBottom:8}}>
@@ -1013,7 +1013,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
           </div>
         </div>}
         {!isOpen&&(reviewing===t.id
-          ? <div style={{marginTop:10,display:"flex",alignItems:"center",gap:8,fontSize:11,color:C.muted}}><Spinner/> Reviewing trade…</div>
+          ? <div style={{marginTop:10,display:"flex",alignItems:"center",gap:8,fontSize: 12,color:C.muted}}><Spinner/> Reviewing trade…</div>
           : reviews[t.id]
             ? <TradeReview review={reviews[t.id]} trade={t} theme={C} onRegenerate={()=>reviewTrade(t)} onVerdict={(v)=>setThesisVerdict(t.id,v)}/>
             : <div style={{marginTop:10}}><Btn small color={C.accent} onClick={()=>reviewTrade(t)}>✨ Generate AI Review</Btn></div>)}
@@ -1033,6 +1033,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
   return(
     <div style={{background:C.bg,minHeight:"100dvh",color:C.text,fontFamily:C.mono,fontSize:12}}>
       <style>{GS}</style>
+      <style>{responsiveCss(C)}</style>
       <div className="tiq-head" style={{borderBottom:`1px solid ${C.border}`,padding:"10px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8,background:C.s1+"d9",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",position:"sticky",top:0,zIndex:100}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <span style={{fontFamily:C.serif,fontWeight:900,fontSize:19,background:`linear-gradient(95deg,${C.accent},#ffd98a)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",letterSpacing:"0.01em"}}>TradeIQ</span>
@@ -1045,7 +1046,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
         </div>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <div style={{textAlign:"right"}}><div style={{fontSize:T.micro,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em"}}>Portfolio</div><div style={{fontFamily:C.display,fontWeight:700,color:C.accent,fontSize:14}}>{holdings.length===0?<Money value={0} currency="INR" decimals={0} size={14} color={C.accent}/>:<Money value={totalVal} currency="USD" size={14} color={C.accent}/>}{holdings.length>0&&<span style={{fontSize:T.caption,color:C.muted}}> / <Money value={totalVal*84} currency="INR" decimals={0} size={T.caption} color={C.muted}/></span>}</div></div>
-          {holdings.length>0&&<div className="tiq-hide-sm" style={{fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:4,background:pc(totalPnL)+"18",color:pc(totalPnL),border:`1px solid ${pc(totalPnL)}28`}}><Money value={totalPnL} currency="USD" signed code={false} size={11} color="inherit"/> ({ps(pnlPct)}{f(pnlPct)}%)</div>}
+          {holdings.length>0&&<div className="tiq-hide-sm" style={{fontSize: 12,fontWeight:700,padding:"4px 10px",borderRadius:4,background:pc(totalPnL)+"18",color:pc(totalPnL),border:`1px solid ${pc(totalPnL)}28`}}><Money value={totalPnL} currency="USD" signed code={false} size={12} color="inherit"/> ({ps(pnlPct)}{f(pnlPct)}%)</div>}
           <span className="tiq-hide-sm" style={{display:"inline-flex",gap:8}}>
             <Btn small color={C.muted} onClick={loadAll}>{syncStatus==="syncing"?<Spinner/>:"⟳"}</Btn>
             {SUPABASE_READY&&session&&<Btn small color={C.muted} onClick={()=>db.auth.signOut()}>Sign out</Btn>}
@@ -1061,7 +1062,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
       {researchOpp&&<ResearchWorkspace opp={researchOpp} theme={C} onSave={saveResearch} onCreateTrade={(o)=>{critiqueAndLog(o);setResearchOpp(null);}} onClose={()=>setResearchOpp(null)} onRunResearch={researchOpportunity} researching={researchingId===researchOpp.id} onIngestFiling={ingestFiling} ingestingAcc={ingestingAcc} onFilingEvent={logFiling}/>}
 
       {/* ── MOBILE BOTTOM NAV — the 4 primary destinations + More sheet.
-          Desktop never sees this (display:none above 700px). ── */}
+          Desktop never sees this (display:none at ≥768px / tablet+). ── */}
       <nav className="tiq-bottomnav">
         {[{id:"dash",i:"🎛️",l:"Mission"},{id:"opps",i:"💡",l:"Ideas"},{id:"council",i:"🏛️",l:"Council"},{id:"journal",i:"📓",l:"Journal"}].map(b=>(
           <button key={b.id} className={`tiq-bn-item${tab===b.id&&!moreOpen?" on":""}`} onClick={()=>{setMoreOpen(false);setTab(b.id);}} aria-label={b.l}>
@@ -1093,7 +1094,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
 // ─── AUTH GATE ────────────────────────────────────────────────────
 function Splash({ label = "Loading…" }) {
   return (
-    <div style={{ minHeight: "100vh", background: C.bg, color: C.muted, fontFamily: C.mono, display: "flex", alignItems: "center", justifyContent: "center" }}>
+    <div style={{ minHeight: "100dvh", background: C.bg, color: C.muted, fontFamily: C.mono, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <span style={{ fontFamily: C.display, fontWeight: 700, fontSize: 13 }}>{label}</span>
     </div>
   );

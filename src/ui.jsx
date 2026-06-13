@@ -113,7 +113,7 @@ export function Term({ k, children, style = {} }) {
       {open && (
         <span style={{
           position: "absolute", bottom: "calc(100% + 7px)", left: "50%", transform: "translateX(-50%)",
-          zIndex: 200, width: 240, background: C.s3, border: `1px solid ${C.border}`, borderRadius: 8,
+          zIndex: 200, width: "min(240px, 92vw)", maxWidth: "92vw", background: C.s3, border: `1px solid ${C.border}`, borderRadius: 8,
           padding: "10px 12px", fontSize: T.caption, lineHeight: 1.55, color: C.text,
           boxShadow: "0 10px 28px #00000077", textTransform: "none", letterSpacing: "normal",
           fontWeight: 500, fontFamily: "inherit", whiteSpace: "normal", textAlign: "left", pointerEvents: "none",
