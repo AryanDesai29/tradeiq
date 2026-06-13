@@ -17,33 +17,18 @@ Everything above and below L2 can be rebuilt by anyone in months. Protect and
 deepen L2. When in doubt about what to build, build the thing that makes the
 system understand Aryan better.
 
-## Product Constitution (every feature must satisfy these — no exceptions)
+## Product Constitution
 
-**1. Prime Directive.** A feature ships only if it (A) improves decision quality
-OR (B) improves understanding of the user. If it does neither, it does not get
-built — no matter how impressive. This is the rule that stops TradeIQ becoming
-"Bloomberg Lite with 500 features."
+**Canonical source — [`docs/CONSTITUTION.md`](docs/CONSTITUTION.md)** (principles) and
+**[`docs/CONSTITUTION-THRESHOLDS.md`](docs/CONSTITUTION-THRESHOLDS.md)** (numeric thresholds,
+`PRELIMINARY`). That document governs; this file deliberately does **not** restate it, to keep
+a single source of truth and prevent governance drift. Amend the constitution there, once —
+never duplicate principles here.
 
-**2. Evidence Hierarchy.** Tier 1 Objective Facts (XBRL, filings, trade records,
-prices) › Tier 2 Derived Metrics (Alpha, IQ, Decision Quality) › Tier 3 Inference
-(Council, research summaries) › Tier 4 Opinion (recommendations, CIO memos). **A
-higher tier may never contradict a lower tier without explicitly flagging it.** A
-CIO memo must never state a number that contradicts XBRL. Keep the existing
-inline FACT / ASSUMPTION / OPINION / SPECULATION labelling everywhere.
-
-**3. Conditioning Rule.** Confidence scales *inversely* with conditioning depth.
-Never present a deeply-conditioned claim (e.g. tech × demand-acceleration ×
-confidence-band × regime → +2.1R) unless the sample survives that depth. Widen
-buckets / drop conditions until N is statistically real, then report at *that*
-granularity — and say so ("regime sample too small to segment further"). The
-system must be comfortable saying **"not enough evidence."** Honest uncertainty
-is a feature; hallucinated certainty is a bug.
-
-**4. Earned Complexity.** Every layer must demonstrate its value *through Decision
-Quality* — did Discovery increase trades researched? did Research change
-decisions? did Filings change verdicts? did the Council improve outcomes? A layer
-that cannot prove its worth gets simplified, demoted, or removed. No monuments to
-cleverness.
+The seven principles, names only (full text + per-principle tests live in the doc): **1.** Prime
+Directive · **2.** Evidence Hierarchy · **3.** Conditioning Rule · **4.** Earned Complexity ·
+**5.** Calibration · **6.** Survival · **7.** Self-Knowledge Flywheel. Every behavior-changing PR
+completes the Constitution Check in [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md).
 
 ## North-star metric
 
