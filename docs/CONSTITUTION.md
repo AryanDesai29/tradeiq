@@ -1,7 +1,8 @@
 # TradeIQ Constitution
 
-**Version:** 1.0.0
+**Version:** 1.0.1
 **Status:** Governing document. Supersedes feature opinion.
+**Thresholds:** numeric values live in [`CONSTITUTION-THRESHOLDS.md`](./CONSTITUTION-THRESHOLDS.md) (separate, evolving).
 **Ratified:** 2026-06-13
 **Amendment rule:** changes require a version bump and a one-line rationale in the Changelog. Principles may be sharpened; loopholes may not be reopened.
 
@@ -74,13 +75,7 @@ Never:
 
 > **Test:** Every conditioned number ships with N and a confidence interval. No point estimate without its interval. Directional subgroup divergence is flagged even when individually underpowered.
 
-**Thresholds — `TBD_AFTER_VALIDATION`.** The required gates (minimum N, minimum CI quality, minimum statistical power) are mandatory; their *values* are not yet set. Setting them before we know the platform's real cadence risks numbers that sound rigorous but make Investor DNA impossible (if a thesis type only ever reaches N=11, an `N≥30` floor silently deletes it) or that admit noise (`N≥5`). Use the provisional values below until real data informs them.
-
-> **Provisional thresholds — `PRELIMINARY · REVIEW AFTER VALIDATION` (not settled science):**
-> - No conditioned insight displayed at all if **N < 5**
-> - Display "Low Confidence" label if **N < 20**
-> - Act-on floor **N ≥ 10**
-> - CI reporting **mandatory** at every N (the interval is the honesty)
+**Thresholds — `TBD_AFTER_VALIDATION`.** The gates (minimum N, minimum CI quality, minimum statistical power) are mandatory and timeless. Their *values* evolve with data and live in [`CONSTITUTION-THRESHOLDS.md`](./CONSTITUTION-THRESHOLDS.md), currently `PRELIMINARY`. Setting them before we know the platform's real cadence would make Investor DNA impossible (an `N≥30` floor silently deletes a thesis type that only ever reaches N=11) or admit noise (`N≥5`) — so they stay provisional until real data informs them.
 
 ---
 
@@ -121,12 +116,7 @@ Reversibility and cost-of-being-wrong sit above expectancy, not beside it.
 
 > **Test:** Any recommendation or optimization reports its risk-of-ruin / max-drawdown contribution. A change that raises expectancy while pushing risk-of-ruin past threshold fails, regardless of expectancy gain.
 
-**Thresholds — `TBD_AFTER_VALIDATION`.** The risk-of-ruin ceiling is mandatory; its value is not yet locked. Use the provisional warnings below until real closed-trade data informs them.
-
-> **Provisional thresholds — `PRELIMINARY · REVIEW AFTER VALIDATION` (not settled science):**
-> - Single-position warning: **> 25%** of portfolio
-> - Theme/concentration warning: **> 40%** in one theme
-> - Effective-bets warning: **< 5** effective independent positions
+**Thresholds — `TBD_AFTER_VALIDATION`.** The risk-of-ruin ceiling is mandatory and timeless; its value evolves with data and lives in [`CONSTITUTION-THRESHOLDS.md`](./CONSTITUTION-THRESHOLDS.md), currently `PRELIMINARY`, until real closed-trade data informs it.
 
 ---
 
@@ -203,4 +193,6 @@ The goalposts are set now, before the week starts.
 ## Changelog
 
 - **1.0.0 (2026-06-13)** — Initial ratification. Seven principles, the `changed_my_mind` influence metric, the PR Constitution Check, and the validation gate. Conditioning-Rule and Survival thresholds left `TBD_AFTER_VALIDATION` with `PRELIMINARY` provisional values — the constitution defines *what must be measured* before it defines the numbers (evidence before conclusions). Locking N / CI / power / risk-of-ruin before knowing the platform's real cadence would either make Investor DNA impossible or admit noise.
-- **1.1.0 (planned)** — After `tiqUsage()` and `tiqFilings()` ship and real closed trades exist, replace the `PRELIMINARY` thresholds with values informed by actual TradeIQ data instead of intuition.
+- **1.0.1 (2026-06-13)** — Extracted all numeric thresholds into `CONSTITUTION-THRESHOLDS.md` so this document holds only timeless principles and the numbers evolve independently. No principle changed.
+- **1.1.0 (planned)** — After `tiqUsage()` and `tiqFilings()` ship and real closed trades exist, replace the `PRELIMINARY` thresholds (in `CONSTITUTION-THRESHOLDS.md`) with values informed by actual TradeIQ data instead of intuition.
+- **1.2.0 (planned, post-validation)** — Consider **Principle 8 — Removal Bias**: when evidence is inconclusive, prefer removing complexity over adding it. Principle 4 (Earned Complexity) asks "does this earn its existence?"; Principle 8 asks "does it *still*?" — a periodic prune against the system becoming a maze. Deferred until validation, per evidence-before-conclusions.
