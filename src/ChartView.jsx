@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import TickerSearch from "./TickerSearch.jsx";
 import { symbolFor, decimalsFor, shortName } from "./stock.js";
+import { fitCanvasToParent, canvasPoint } from "./responsive.js";
 
 const C = {
   bg:"#0a101e",s1:"#0e1628",s2:"#131d33",s3:"#1a2742",
@@ -27,7 +28,10 @@ function useChart(canvasRef, data, chartType, showIndicators, hoveredIdx) {
     const canvas = canvasRef.current;
     if (!canvas || !data?.candles?.length) return;
     const ctx = canvas.getContext("2d");
-    const W = canvas.width, H = canvas.height;
+    // Draw in CSS-pixel (logical) space — the canvas bitmap is DPR-scaled by
+    // fitCanvasToParent and the context is pre-scaled, so all geometry uses
+    // clientWidth/Height, never the (larger) device-pixel canvas.width/height.
+    const W = canvas.clientWidth, H = canvas.clientHeight;
     const { padL, padR, padT, padB } = dims.current;
 
     // Panel heights
@@ -356,9 +360,7 @@ export default function ChartView({ ticker: initialTicker, market = "us", onClos
     const resize = () => {
       const c = canvasRef.current;
       if (!c) return;
-      const parent = c.parentElement;
-      c.width  = parent.clientWidth;
-      c.height = parent.clientHeight;
+      fitCanvasToParent(c); // DPR-aware: hi-DPI bitmap + context scaled to draw in CSS px
       draw();
     };
     resize();
@@ -367,20 +369,23 @@ export default function ChartView({ ticker: initialTicker, market = "us", onClos
     return () => ro.disconnect();
   }, [data, draw]);
 
-  const handleMouseMove = useCallback((e) => {
+  // One handler for mouse AND touch — canvasPoint normalizes both to logical
+  // (CSS-pixel) coords, matching the draw space, so candle hit-testing is
+  // correct on every DPR and on touch devices.
+  const handlePoint = useCallback((e) => {
     if (!data?.candles?.length || !canvasRef.current) return;
-    const rect = canvasRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) * (canvasRef.current.width / rect.width);
+    const pt = canvasPoint(canvasRef.current, e);
+    if (!pt) return;
     const { padL, padR, W } = dims.current;
-    const drawW = canvasRef.current.width - padL - padR;
+    const drawW = W - padL - padR;
     const n = data.candles.length;
     const spacing = drawW / n;
-    const i = Math.round((x - padL) / spacing);
+    const i = Math.round((pt.x - padL) / spacing);
     if (i >= 0 && i < n) {
       setHoveredIdx(i);
       setHoveredCandle(data.candles[i]);
     }
-  }, [data, dims]);
+  }, [data]);
 
   const handleMouseLeave = useCallback(() => {
     setHoveredIdx(null);
@@ -489,9 +494,11 @@ export default function ChartView({ ticker: initialTicker, market = "us", onClos
         )}
         <canvas
           ref={canvasRef}
-          style={{ width:"100%", height:"100%", display:"block", cursor:"crosshair" }}
-          onMouseMove={handleMouseMove}
+          style={{ width:"100%", height:"100%", display:"block", cursor:"crosshair", touchAction:"none" }}
+          onMouseMove={handlePoint}
           onMouseLeave={handleMouseLeave}
+          onTouchStart={handlePoint}
+          onTouchMove={handlePoint}
         />
       </div>
 
