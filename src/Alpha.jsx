@@ -46,7 +46,7 @@ export default function PersonalAlpha({ journal = [], reviews = [], theme }) {
   if (a.confidentBuckets === 0) {
     return (
       <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 8, padding: 16, marginBottom: 14 }}>
-        <div style={{ fontFamily: C.display, fontWeight: 700, fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", color: C.muted, marginBottom: 8 }}>Personal Alpha</div>
+        <div style={{ fontFamily: C.display, fontWeight: 700, fontSize: 12, letterSpacing: "0.14em", textTransform: "uppercase", color: C.muted, marginBottom: 8 }}>Personal Alpha</div>
         <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.6 }}>
           Learning what makes you money. Once any condition — strategy, sector, market, hold time — reaches <b style={{ color: C.text }}>{a.minSample}</b> closed trades with a stop, its expectancy appears here.
           {a.closed > 0 && <> So far <b style={{ color: C.accent }}>{a.closed}</b> closed; keep logging with a stop set.</>}
@@ -122,7 +122,7 @@ export default function PersonalAlpha({ journal = [], reviews = [], theme }) {
 
       {a.dims.map((d) => (
         <div key={d.id} style={{ marginBottom: 14 }}>
-          <div style={{ fontFamily: C.display, fontWeight: 700, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: C.muted, marginBottom: 8 }}>{d.label}</div>
+          <div style={{ fontFamily: C.display, fontWeight: 700, fontSize: 12, letterSpacing: "0.12em", textTransform: "uppercase", color: C.muted, marginBottom: 8 }}>{d.label}</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {d.groups.map((g) => {
               const confident = g.withRisk >= a.minSample;
@@ -130,7 +130,7 @@ export default function PersonalAlpha({ journal = [], reviews = [], theme }) {
               const w = `${Math.min(100, (Math.abs(g.expectancyR) / maxAbs) * 100)}%`;
               return (
                 <div key={g.key} style={{ display: "flex", alignItems: "center", gap: 10, opacity: confident ? 1 : 0.55 }}>
-                  <div style={{ width: 130, fontSize: 11, color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.key}</div>
+                  <div style={{ width: 130, minWidth: 0, flexShrink: 1, fontSize: 12, color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.key}</div>
                   {/* diverging bar: centre line, grows right (green) or left (red) */}
                   <div style={{ flex: 1, display: "flex", justifyContent: g.expectancyR >= 0 ? "flex-start" : "flex-end", flexDirection: g.expectancyR >= 0 ? "row" : "row-reverse" }}>
                     <div style={{ height: 6, width: w, minWidth: 3, background: col, borderRadius: 3 }} />

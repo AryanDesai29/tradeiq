@@ -76,8 +76,8 @@ export default function MissionControl({ holdings = [], journal = [], reviewsMap
         .mc-3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;}
         .mc-pos{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px;}
         .mc-loop{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;}
-        @media(max-width:880px){.mc-b,.mc-c,.mc-3{grid-template-columns:1fr;}.mc-loop{grid-template-columns:repeat(2,minmax(0,1fr));}}
-        @media(max-width:480px){.mc-loop{grid-template-columns:1fr;}}
+        @media(max-width:1023px){.mc-b,.mc-c,.mc-3{grid-template-columns:1fr;}.mc-loop{grid-template-columns:repeat(2,minmax(0,1fr));}}
+        @media(max-width:767px){.mc-loop{grid-template-columns:1fr;}}
       `}</style>
 
       {/* ── MISSION BRIEFING ─────────────────────────────────────── */}

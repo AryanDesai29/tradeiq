@@ -16,7 +16,7 @@ export default function DecisionQuality({ opportunities = [], journal = [], revi
   const pc = (x) => `${Math.round((x || 0) * 100)}%`;
 
   const card = { background: C.s1, border: `1px solid ${C.border}`, borderRadius: 8, padding: 16, marginBottom: 12 };
-  const hLabel = { fontFamily: C.display, fontWeight: 700, fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", color: C.muted, marginBottom: 10 };
+  const hLabel = { fontFamily: C.display, fontWeight: 700, fontSize: 12, letterSpacing: "0.14em", textTransform: "uppercase", color: C.muted, marginBottom: 10 };
 
   // Funnel as stacked bars scaled to the top stage (Generated = 100%).
   const Funnel = ({ stages }) => (
@@ -56,14 +56,14 @@ export default function DecisionQuality({ opportunities = [], journal = [], revi
             </div>
           ))}
         </div>
-        <div style={{ fontSize: 10, color: C.dim, marginTop: 10, lineHeight: 1.5 }}>Every layer is sample-gated — a grey dot means not enough data yet to judge it. Outcome rows fill as you research, convene the Council, and close trades.</div>
+        <div style={{ fontSize: 12, color: C.dim, marginTop: 10, lineHeight: 1.5 }}>Every layer is sample-gated — a grey dot means not enough data yet to judge it. Outcome rows fill as you research, convene the Council, and close trades.</div>
       </div>
 
       {/* Opportunity funnel */}
       <div style={card}>
         <div style={hLabel}>Opportunity Funnel <span style={{ color: C.dim }}>· generated → researched → council → traded → successful</span></div>
         <Funnel stages={s.opp.stages} />
-        <div style={{ fontSize: 10, color: C.dim, marginTop: 8 }}>"Successful" is ticker-matched to closed winning trades (the opportunity→trade link isn't a hard key) — read it as directional, not exact.</div>
+        <div style={{ fontSize: 12, color: C.dim, marginTop: 8 }}>"Successful" is ticker-matched to closed winning trades (the opportunity→trade link isn't a hard key) — read it as directional, not exact.</div>
       </div>
 
       {/* Research + Council, side by side */}
@@ -106,7 +106,7 @@ export default function DecisionQuality({ opportunities = [], journal = [], revi
             {s.filing.sectionsSkipped.length > 0 && <div style={{ color: C.dim }}>Most-skipped: {s.filing.sectionsSkipped.slice(0, 4).map((x) => `${x.key} (${x.count})`).join(" · ")}</div>}
           </div>
         )}
-        {s.filing.totalReads === 0 && <div style={{ fontSize: 11, color: C.dim, marginTop: 8 }}>No filings read yet — read one from a research workspace, then watch whether Council verdicts move.</div>}
+        {s.filing.totalReads === 0 && <div style={{ fontSize: 12, color: C.dim, marginTop: 8 }}>No filings read yet — read one from a research workspace, then watch whether Council verdicts move.</div>}
       </div>
     </div>
   );

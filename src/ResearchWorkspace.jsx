@@ -39,7 +39,7 @@ export default function ResearchWorkspace({ opp, theme: C, onSave, onCreateTrade
   const run = async () => { const patch = await onRunResearch?.(d); if (patch) setD((p) => ({ ...p, ...patch })); };
 
   const ta = { background: C.s1, border: `1px solid ${C.border}`, borderRadius: 5, padding: "8px 11px", color: C.text, fontFamily: C.mono, fontSize: 13, width: "100%", resize: "vertical", lineHeight: 1.5 };
-  const lbl = { fontSize: 11, color: C.muted, marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.1em" };
+  const lbl = { fontSize: 12, color: C.muted, marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.1em" };
   const Field = ({ k, label, ph, h = 60 }) => (
     <div style={{ flex: 1, minWidth: 220, marginBottom: 10 }}>
       <div style={lbl}>{label}</div>
@@ -57,9 +57,9 @@ export default function ResearchWorkspace({ opp, theme: C, onSave, onCreateTrade
   ];
   const Meter = ({ label, v }) => (
     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-      <span style={{ fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.08em" }}>{label}</span>
+      <span style={{ fontSize: 12, color: C.muted, textTransform: "uppercase", letterSpacing: "0.08em" }}>{label}</span>
       <div style={{ width: 56, height: 5, background: C.dim, borderRadius: 3, overflow: "hidden" }}><div style={{ width: `${v}%`, height: "100%", background: v >= 60 ? C.green : v >= 35 ? C.gold : C.red }} /></div>
-      <span style={{ fontSize: 11, fontWeight: 700, color: C.text }}>{v}</span>
+      <span style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{v}</span>
     </div>
   );
 
@@ -69,14 +69,14 @@ export default function ResearchWorkspace({ opp, theme: C, onSave, onCreateTrade
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderBottom: `1px solid ${C.border}`, background: C.s1, flexWrap: "wrap" }}>
           <span style={{ fontFamily: C.display, fontWeight: 800, fontSize: 16 }}>{d.ticker}</span>
-          <span style={{ fontSize: 11, color: C.muted }}>{d.name}</span>
-          <span style={{ fontSize: 10, fontWeight: 700, color: C.accent, textTransform: "uppercase", letterSpacing: "0.1em" }}>· Research Workspace</span>
+          <span style={{ fontSize: 12, color: C.muted }}>{d.name}</span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: C.accent, textTransform: "uppercase", letterSpacing: "0.1em" }}>· Research Workspace</span>
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <div style={{ width: 70, height: 5, background: C.dim, borderRadius: 3, overflow: "hidden" }}><div style={{ width: `${score * 100}%`, height: "100%", background: scoreCol }} /></div>
-              <span style={{ fontSize: 11, color: scoreCol, fontWeight: 700 }}>{Math.round(score * 100)}%</span>
+              <span style={{ fontSize: 12, color: scoreCol, fontWeight: 700 }}>{Math.round(score * 100)}%</span>
             </div>
-            <button onClick={onClose} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 4, color: C.muted, fontSize: 13, minWidth: 36, minHeight: 36, display: "inline-flex", alignItems: "center", justifyContent: "center", padding: 0, cursor: "pointer" }}>✕</button>
+            <button onClick={onClose} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 4, color: C.muted, fontSize: 13, minWidth: 44, minHeight: 44, display: "inline-flex", alignItems: "center", justifyContent: "center", padding: 0, cursor: "pointer" }}>✕</button>
           </div>
         </div>
 
@@ -97,7 +97,7 @@ export default function ResearchWorkspace({ opp, theme: C, onSave, onCreateTrade
             <div>
               <div style={lbl}>Risk</div>
               <div style={{ display: "flex", gap: 4 }}>
-                {RISK_LEVELS.map((r) => <button key={r} onClick={() => set("risk_level", r)} style={{ fontSize: 10, fontWeight: 700, padding: "11px 12px", minHeight: 36, borderRadius: 4, cursor: "pointer", textTransform: "uppercase", border: `1px solid ${d.risk_level === r ? riskCol[r] : C.border}`, background: d.risk_level === r ? riskCol[r] + "22" : "transparent", color: d.risk_level === r ? riskCol[r] : C.muted }}>{r}</button>)}
+                {RISK_LEVELS.map((r) => <button key={r} onClick={() => set("risk_level", r)} style={{ fontSize: 12, fontWeight: 700, padding: "11px 12px", minHeight: 44, borderRadius: 4, cursor: "pointer", textTransform: "uppercase", border: `1px solid ${d.risk_level === r ? riskCol[r] : C.border}`, background: d.risk_level === r ? riskCol[r] + "22" : "transparent", color: d.risk_level === r ? riskCol[r] : C.muted }}>{r}</button>)}
               </div>
             </div>
           </div>
@@ -116,9 +116,9 @@ export default function ResearchWorkspace({ opp, theme: C, onSave, onCreateTrade
           {/* ── AI RESEARCH — tasks + one-click analyst run ── */}
           <div style={{ background: C.s1, border: `1px solid ${C.purple}30`, borderRadius: 8, padding: 12, marginBottom: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: C.purple, textTransform: "uppercase", letterSpacing: "0.12em" }}>🤖 Research Tasks</span>
-              {prog.total > 0 && <span style={{ fontSize: 11, color: C.muted }}>{prog.done}/{prog.total} answered</span>}
-              <button className="tiq-btn" disabled={researching || !queued} onClick={run} style={{ marginLeft: "auto", background: researching || !queued ? C.muted + "25" : C.purple, border: "none", borderRadius: 6, color: researching || !queued ? C.muted : "#fff", fontFamily: C.display, fontWeight: 700, fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", padding: "7px 13px", cursor: researching || !queued ? "not-allowed" : "pointer" }}>{researching ? "Analyst working…" : queued ? `▶ Run AI research (${queued})` : "All tasks answered"}</button>
+              <span style={{ fontSize: 12, fontWeight: 700, color: C.purple, textTransform: "uppercase", letterSpacing: "0.12em" }}>🤖 Research Tasks</span>
+              {prog.total > 0 && <span style={{ fontSize: 12, color: C.muted }}>{prog.done}/{prog.total} answered</span>}
+              <button className="tiq-btn" disabled={researching || !queued} onClick={run} style={{ marginLeft: "auto", background: researching || !queued ? C.muted + "25" : C.purple, border: "none", borderRadius: 6, color: researching || !queued ? C.muted : "#fff", fontFamily: C.display, fontWeight: 700, fontSize: 12, letterSpacing: "0.06em", textTransform: "uppercase", padding: "7px 13px", cursor: researching || !queued ? "not-allowed" : "pointer" }}>{researching ? "Analyst working…" : queued ? `▶ Run AI research (${queued})` : "All tasks answered"}</button>
             </div>
             {d.research_tasks.length === 0 && <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.5, marginBottom: 6 }}>No tasks yet — running AI research queues the 6-question analyst playbook automatically, or add your own question below.</div>}
             {d.research_tasks.map((t) => (
@@ -126,14 +126,14 @@ export default function ResearchWorkspace({ opp, theme: C, onSave, onCreateTrade
                 <div style={{ display: "flex", gap: 7, alignItems: "baseline", fontSize: 12.5 }}>
                   <span style={{ color: TASK_DOT[t.status] || C.muted }}>●</span>
                   <span style={{ flex: 1, color: C.text, lineHeight: 1.45 }}>{t.question}</span>
-                  <span style={{ fontSize: 10, color: C.dim, whiteSpace: "nowrap" }}>{TASK_LABEL[t.type] || t.type} · {SRC_TAG[t.source] || t.source}</span>
+                  <span style={{ fontSize: 12, color: C.dim, whiteSpace: "nowrap" }}>{TASK_LABEL[t.type] || t.type} · {SRC_TAG[t.source] || t.source}</span>
                 </div>
                 {t.finding && <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.55, margin: "3px 0 0 18px", borderLeft: `2px solid ${C.purple}40`, paddingLeft: 8 }}>{t.finding}</div>}
               </div>
             ))}
             <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
               <input value={tq} onChange={(e) => setTq(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addTask()} placeholder="Add a research question for the analyst…" style={{ ...ta, flex: 1, height: "auto", padding: "6px 10px" }} />
-              <button onClick={addTask} style={{ background: C.purple + "18", border: `1px solid ${C.purple}35`, borderRadius: 5, color: C.purple, padding: "0 12px", cursor: "pointer", fontFamily: C.display, fontWeight: 700, fontSize: 11 }}>Queue</button>
+              <button onClick={addTask} style={{ background: C.purple + "18", border: `1px solid ${C.purple}35`, borderRadius: 5, color: C.purple, padding: "0 12px", cursor: "pointer", fontFamily: C.display, fontWeight: 700, fontSize: 12 }}>Queue</button>
             </div>
           </div>
 
@@ -141,7 +141,7 @@ export default function ResearchWorkspace({ opp, theme: C, onSave, onCreateTrade
           {brief && (
             <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 8, padding: 12, marginBottom: 12 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: C.accent, textTransform: "uppercase", letterSpacing: "0.12em" }}>📑 Research Brief</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: C.accent, textTransform: "uppercase", letterSpacing: "0.12em" }}>📑 Research Brief</span>
                 <Meter label="Evidence" v={brief.evidence_strength} />
                 <Meter label="Confidence" v={brief.research_confidence} />
               </div>
@@ -171,15 +171,15 @@ export default function ResearchWorkspace({ opp, theme: C, onSave, onCreateTrade
             const mg = (m) => m?.latest == null ? null : { v: `${(m.latest * 100).toFixed(1)}%`, d: m.deltaYoY == null ? "" : `${m.deltaYoY >= 0 ? "▲" : "▼"}${Math.abs(m.deltaYoY * 100).toFixed(1)}pp` };
             const Metric = ({ label, value, sub, col }) => (
               <div style={{ flex: "1 1 110px", minWidth: 100 }}>
-                <div style={{ fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: "0.08em" }}>{label}</div>
+                <div style={{ fontSize: 12, color: C.dim, textTransform: "uppercase", letterSpacing: "0.08em" }}>{label}</div>
                 <div style={{ fontSize: 15, fontWeight: 700, color: col || C.text }}>{value}</div>
-                {sub && <div style={{ fontSize: 10, color: C.muted }}>{sub}</div>}
+                {sub && <div style={{ fontSize: 12, color: C.muted }}>{sub}</div>}
               </div>
             );
             const gm = mg(t.grossMargin), om = mg(t.operatingMargin), nm = mg(t.netMargin);
             return (
               <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 8, padding: 12, marginBottom: 12 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: C.green, textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: C.green, textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8 }}>
                   📊 Fundamentals <span style={{ color: C.dim, fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>· XBRL {t.revenue.form || "10-Q"} {t.revenue.end} · hard facts, not estimates</span>
                 </div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
@@ -189,7 +189,7 @@ export default function ResearchWorkspace({ opp, theme: C, onSave, onCreateTrade
                   {nm && <Metric label="Net margin" value={nm.v} sub={nm.d} />}
                   {t.rndIntensity != null && <Metric label="R&D / rev" value={`${(t.rndIntensity * 100).toFixed(0)}%`} />}
                 </div>
-                <div style={{ fontSize: 10, color: C.dim, marginTop: 6, lineHeight: 1.5 }}>Exact numbers from the company's SEC XBRL filings ({t.quarters}q of history) — deterministic, no AI in the loop.</div>
+                <div style={{ fontSize: 12, color: C.dim, marginTop: 6, lineHeight: 1.5 }}>Exact numbers from the company's SEC XBRL filings ({t.quarters}q of history) — deterministic, no AI in the loop.</div>
               </div>
             );
           })()}
@@ -197,7 +197,7 @@ export default function ResearchWorkspace({ opp, theme: C, onSave, onCreateTrade
           {/* ── SOURCES — the real news + filings behind the last research run ── */}
           {d.research_sources && ((d.research_sources.news || []).length > 0 || (d.research_sources.filings || []).length > 0 || d.research_sources.filings_note) && (
             <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 8, padding: 12, marginBottom: 12 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: C.blue, textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.blue, textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8 }}>
                 🗞 Sources{d.research_sources.fetched_at ? <span style={{ color: C.dim, fontWeight: 400, textTransform: "none", letterSpacing: 0 }}> · fetched {new Date(d.research_sources.fetched_at).toLocaleDateString()}</span> : null}
               </div>
               {(d.research_sources.news || []).map((n, i) => (
@@ -206,7 +206,7 @@ export default function ResearchWorkspace({ opp, theme: C, onSave, onCreateTrade
                   {n.link
                     ? <a href={n.link} target="_blank" rel="noreferrer" style={{ color: C.text, textDecoration: "underline", textDecorationColor: C.dim, flex: 1 }}>{n.title}</a>
                     : <span style={{ color: C.text, flex: 1 }}>{n.title}</span>}
-                  {n.publisher && <span style={{ color: C.muted, fontSize: 11, whiteSpace: "nowrap" }}>{n.publisher}</span>}
+                  {n.publisher && <span style={{ color: C.muted, fontSize: 12, whiteSpace: "nowrap" }}>{n.publisher}</span>}
                 </div>
               ))}
               {(d.research_sources.filings || []).map((f, i) => {
@@ -224,16 +224,16 @@ export default function ResearchWorkspace({ opp, theme: C, onSave, onCreateTrade
                       : <span style={{ color: C.text, flex: 1 }}>{f.title || "filing"}</span>}
                     {readable && onIngestFiling && (
                       read
-                        ? <span title="Filing read — digest below" style={{ color: C.green, fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>✓ Read</span>
+                        ? <span title="Filing read — digest below" style={{ color: C.green, fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>✓ Read</span>
                         : <button onClick={readFiling} disabled={busy || !!ingestingAcc} title="Read this filing's text into a digest (~30s)"
-                            style={{ background: "transparent", border: `1px solid ${C.border}`, color: busy ? C.dim : C.blue, borderRadius: 5, padding: "1px 7px", fontSize: 11, fontWeight: 700, cursor: busy || ingestingAcc ? "default" : "pointer", whiteSpace: "nowrap" }}>
+                            style={{ background: "transparent", border: `1px solid ${C.border}`, color: busy ? C.dim : C.blue, borderRadius: 5, padding: "1px 7px", fontSize: 12, fontWeight: 700, cursor: busy || ingestingAcc ? "default" : "pointer", whiteSpace: "nowrap" }}>
                             {busy ? "Reading…" : "📖 Read"}</button>
                     )}
                   </div>
                 );
               })}
-              {!(d.research_sources.filings || []).length && d.research_sources.filings_note && <div style={{ fontSize: 11, color: C.muted, lineHeight: 1.5 }}>{d.research_sources.filings_note}</div>}
-              <div style={{ fontSize: 10, color: C.dim, marginTop: 6, lineHeight: 1.5 }}>Headlines and filing dates are facts; contents are unread by the AI — open the links to verify before acting.</div>
+              {!(d.research_sources.filings || []).length && d.research_sources.filings_note && <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.5 }}>{d.research_sources.filings_note}</div>}
+              <div style={{ fontSize: 12, color: C.dim, marginTop: 6, lineHeight: 1.5 }}>Headlines and filing dates are facts; contents are unread by the AI — open the links to verify before acting.</div>
             </div>
           )}
 
@@ -242,7 +242,7 @@ export default function ResearchWorkspace({ opp, theme: C, onSave, onCreateTrade
             const open = !!openDig[acc];
             return (
             <div key={acc} style={{ background: C.s1, border: `1px solid ${C.green}55`, borderRadius: 8, padding: 12, marginBottom: 12 }}>
-              <div onClick={() => toggleDig(acc, dg)} style={{ fontSize: 11, fontWeight: 700, color: C.green, textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div onClick={() => toggleDig(acc, dg)} style={{ fontSize: 12, fontWeight: 700, color: C.green, textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span>📖 Filing Digest <span style={{ color: C.dim, fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>· {dg.form || "filing"}{dg.filed ? ` filed ${dg.filed}` : ""} · read from the filing's own text</span></span>
                 <span style={{ color: C.dim, fontWeight: 400 }}>{open ? "▲ collapse" : "▼ expand"}</span>
               </div>
@@ -251,18 +251,18 @@ export default function ResearchWorkspace({ opp, theme: C, onSave, onCreateTrade
               {[["Guidance", dg.guidance, C.blue], ["Revenue drivers", dg.revenue_drivers, C.text], ["Margin commentary", dg.margin_commentary, C.text], ["Risk changes", dg.risk_changes, C.gold], ["Red flags", dg.red_flags, C.red]].map(([label, arr, col]) =>
                 Array.isArray(arr) && arr.length ? (
                   <div key={label} style={{ marginBottom: 6 }}>
-                    <div style={{ fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>{label}</div>
+                    <div style={{ fontSize: 12, color: C.dim, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>{label}</div>
                     {arr.map((x, j) => <div key={j} style={{ fontSize: 12, color: col, lineHeight: 1.5 }}>• {x}</div>)}
                   </div>
                 ) : null)}
               {Array.isArray(dg.quotes) && dg.quotes.length ? (
                 <div style={{ marginBottom: 6 }}>
-                  <div style={{ fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>Verbatim quotes</div>
+                  <div style={{ fontSize: 12, color: C.dim, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>Verbatim quotes</div>
                   {dg.quotes.map((q, j) => <div key={j} style={{ fontSize: 12, color: C.muted, fontStyle: "italic", lineHeight: 1.5 }}>"{q.text}"{q.section ? <span style={{ color: C.dim, fontStyle: "normal" }}> — {q.section}</span> : null}</div>)}
                 </div>
               ) : null}
               {Array.isArray(dg.not_ingested) && dg.not_ingested.length ? (
-                <div style={{ fontSize: 10, color: C.dim, marginTop: 6, lineHeight: 1.5 }}>Sections not read (the AI must not claim the filing is silent on these): {dg.not_ingested.join("; ")}</div>
+                <div style={{ fontSize: 12, color: C.dim, marginTop: 6, lineHeight: 1.5 }}>Sections not read (the AI must not claim the filing is silent on these): {dg.not_ingested.join("; ")}</div>
               ) : null}
               </>}
             </div>
@@ -276,13 +276,13 @@ export default function ResearchWorkspace({ opp, theme: C, onSave, onCreateTrade
               <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 4, fontSize: 13, color: C.text }}>
                 <span style={{ color: C.green }}>▸</span>
                 <span style={{ flex: 1, lineHeight: 1.45 }}>{e.text}</span>
-                <span style={{ color: C.dim, fontSize: 11, whiteSpace: "nowrap" }}>{e.at ? new Date(e.at).toLocaleDateString() : ""}</span>
-                <span onClick={() => set("evidence_log", removeEvidence(d.evidence_log, i))} style={{ cursor: "pointer", color: C.muted, fontSize: 11 }}>✕</span>
+                <span style={{ color: C.dim, fontSize: 12, whiteSpace: "nowrap" }}>{e.at ? new Date(e.at).toLocaleDateString() : ""}</span>
+                <span onClick={() => set("evidence_log", removeEvidence(d.evidence_log, i))} style={{ cursor: "pointer", color: C.muted, fontSize: 12 }}>✕</span>
               </div>
             ))}
             <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
               <input value={ev} onChange={(e) => setEv(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addEv()} placeholder="Add evidence (filings, channel checks, data points)…" style={{ ...ta, flex: 1, height: "auto", padding: "6px 10px" }} />
-              <button onClick={addEv} style={{ background: C.accent + "18", border: `1px solid ${C.accent}35`, borderRadius: 5, color: C.accent, padding: "0 12px", cursor: "pointer", fontFamily: C.display, fontWeight: 700, fontSize: 11 }}>Add</button>
+              <button onClick={addEv} style={{ background: C.accent + "18", border: `1px solid ${C.accent}35`, borderRadius: 5, color: C.accent, padding: "0 12px", cursor: "pointer", fontFamily: C.display, fontWeight: 700, fontSize: 12 }}>Add</button>
             </div>
           </div>
 
@@ -293,8 +293,8 @@ export default function ResearchWorkspace({ opp, theme: C, onSave, onCreateTrade
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", borderTop: `1px solid ${C.border}`, paddingTop: 12, marginTop: 4 }}>
             <button onClick={() => { onSave(d); setSaved(true); }} style={{ background: saved ? C.green + "22" : C.s3, border: `1px solid ${saved ? C.green : C.border}`, borderRadius: 5, color: saved ? C.green : C.text, padding: "8px 16px", cursor: "pointer", fontFamily: C.display, fontWeight: 700, fontSize: 12 }}>{saved ? "✓ Saved" : "Save research"}</button>
             <button onClick={() => { onSave(d); onCreateTrade(d); }} style={{ background: C.green, border: "none", borderRadius: 5, color: "#04150c", padding: "8px 16px", cursor: "pointer", fontFamily: C.display, fontWeight: 800, fontSize: 12, opacity: ready ? 1 : 0.6 }}>Create Trade from Research →</button>
-            {!ready && <span style={{ fontSize: 11, color: C.gold }}>Fill expectations, reality, bear case & invalidation to trade with conviction</span>}
-            <span style={{ marginLeft: "auto", fontSize: 11, color: C.muted }}>Research flows into the Journal · Investor IQ · Personal Alpha</span>
+            {!ready && <span style={{ fontSize: 12, color: C.gold }}>Fill expectations, reality, bear case & invalidation to trade with conviction</span>}
+            <span style={{ marginLeft: "auto", fontSize: 12, color: C.muted }}>Research flows into the Journal · Investor IQ · Personal Alpha</span>
           </div>
         </div>
       </div>

@@ -418,7 +418,7 @@ export default function ChartView({ ticker: initialTicker, market = "us", onClos
         {data?.meta && (
           <div style={{ display:"flex", gap:12, alignItems:"center" }}>
             <span style={{ fontFamily:C.display, fontWeight:700, fontSize:16 }}>{curr}{data.meta.lastClose?.toFixed(dp)}</span>
-            <span style={{ fontSize:11, fontWeight:700, padding:"3px 8px", borderRadius:4, background:trendColor+"18", color:trendColor, border:`1px solid ${trendColor}28` }}>
+            <span style={{ fontSize: 12, fontWeight:700, padding:"3px 8px", borderRadius:4, background:trendColor+"18", color:trendColor, border:`1px solid ${trendColor}28` }}>
               {data.trend}
             </span>
           </div>
@@ -426,9 +426,9 @@ export default function ChartView({ ticker: initialTicker, market = "us", onClos
 
         {/* Period buttons */}
         <div style={{ display:"flex", gap:4, marginLeft:"auto", alignItems:"center" }}>
-          <span style={{ fontSize:11, color:C.muted, marginRight:4 }}>daily candles</span>
+          <span style={{ fontSize: 12, color:C.muted, marginRight:4 }}>daily candles</span>
           {PERIODS.map(p => (
-            <button key={p} onClick={() => setPeriod(p)} style={{ background:period===p?C.accent+"25":"none", border:`1px solid ${period===p?C.accent:C.border}`, borderRadius:4, color:period===p?C.accent:C.muted, fontFamily:C.display, fontWeight:700, fontSize:11, padding:"8px 12px", minHeight:36, cursor:"pointer" }}>
+            <button key={p} onClick={() => setPeriod(p)} style={{ background:period===p?C.accent+"25":"none", border:`1px solid ${period===p?C.accent:C.border}`, borderRadius:4, color:period===p?C.accent:C.muted, fontFamily:C.display, fontWeight:700, fontSize: 12, padding:"8px 12px", minHeight: 44, cursor:"pointer" }}>
               {PERIOD_LABELS[p]}
             </button>
           ))}
@@ -446,7 +446,7 @@ export default function ChartView({ ticker: initialTicker, market = "us", onClos
         {/* Indicator toggles */}
         <div style={{ display:"flex", gap:4 }}>
           {[["ema","EMA",C.accent],["rsi","RSI",C.purple],["macd","MACD",C.blue],["volume","VOL",C.gold]].map(([key,label,col]) => (
-            <button key={key} onClick={() => setShowInd(p => ({...p,[key]:!p[key]}))} style={{ background:showInd[key]?col+"20":"none", border:`1px solid ${showInd[key]?col:C.border}`, borderRadius:4, color:showInd[key]?col:C.muted, fontFamily:C.display, fontWeight:700, fontSize:11, padding:"8px 10px", minHeight:36, cursor:"pointer", textTransform:"uppercase", letterSpacing:"0.08em" }}>
+            <button key={key} onClick={() => setShowInd(p => ({...p,[key]:!p[key]}))} style={{ background:showInd[key]?col+"20":"none", border:`1px solid ${showInd[key]?col:C.border}`, borderRadius:4, color:showInd[key]?col:C.muted, fontFamily:C.display, fontWeight:700, fontSize: 12, padding:"8px 10px", minHeight: 44, cursor:"pointer", textTransform:"uppercase", letterSpacing:"0.08em" }}>
               {label}
             </button>
           ))}
@@ -458,7 +458,7 @@ export default function ChartView({ ticker: initialTicker, market = "us", onClos
       </div>
 
       {/* OHLCV hover bar */}
-      <div style={{ height:28, background:C.s2, borderBottom:`1px solid ${C.border}`, display:"flex", alignItems:"center", gap:16, padding:"0 14px", fontSize:11 }}>
+      <div style={{ minHeight:28, background:C.s2, borderBottom:`1px solid ${C.border}`, display:"flex", alignItems:"center", flexWrap:"wrap", columnGap:16, rowGap:2, padding:"4px 14px", fontSize: 12 }}>
         {hoveredCandle ? (
           <>
             <span style={{ color:C.muted }}>{formatDate(hoveredCandle.t)}</span>
@@ -489,7 +489,7 @@ export default function ChartView({ ticker: initialTicker, market = "us", onClos
         {error && (
           <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", flexDirection:"column", gap:10 }}>
             <div style={{ color:C.red, fontSize:13 }}>⚠️ {error}</div>
-            <button onClick={() => fetchChart(ticker, period)} style={{ background:C.accent+"18", border:`1px solid ${C.accent}35`, borderRadius:5, color:C.accent, padding:"6px 16px", cursor:"pointer", fontFamily:C.display, fontWeight:700, fontSize:11 }}>Retry</button>
+            <button onClick={() => fetchChart(ticker, period)} style={{ background:C.accent+"18", border:`1px solid ${C.accent}35`, borderRadius:5, color:C.accent, padding:"6px 16px", cursor:"pointer", fontFamily:C.display, fontWeight:700, fontSize: 12 }}>Retry</button>
           </div>
         )}
         <canvas
@@ -505,9 +505,9 @@ export default function ChartView({ ticker: initialTicker, market = "us", onClos
       {/* Signal legend */}
       {data?.signals?.length > 0 && (
         <div style={{ padding:"6px 14px", borderTop:`1px solid ${C.border}`, background:C.s1, display:"flex", gap:10, flexWrap:"wrap", alignItems:"center" }}>
-          <span style={{ fontSize:11, color:C.muted, textTransform:"uppercase", letterSpacing:"0.1em", fontFamily:C.display, fontWeight:700 }}>Signals:</span>
+          <span style={{ fontSize: 12, color:C.muted, textTransform:"uppercase", letterSpacing:"0.1em", fontFamily:C.display, fontWeight:700 }}>Signals:</span>
           {data.signals.slice(-6).map((s, i) => (
-            <span key={i} style={{ fontSize:11, color:s.bull?C.green:C.red, background:(s.bull?C.green:C.red)+"15", padding:"2px 7px", borderRadius:3, border:`1px solid ${s.bull?C.green:C.red}28` }}>
+            <span key={i} style={{ fontSize: 12, color:s.bull?C.green:C.red, background:(s.bull?C.green:C.red)+"15", padding:"2px 7px", borderRadius:3, border:`1px solid ${s.bull?C.green:C.red}28` }}>
               {s.label} · {formatDate(s.t)}
             </span>
           ))}
