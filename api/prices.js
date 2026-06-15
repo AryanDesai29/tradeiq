@@ -16,8 +16,9 @@ export default async function handler(req, res) {
   const rl = await enforce(callerKey(req, user?.id), [['prices_hourly', 60, 3600]]);
   if (!rl.ok) return tooMany(res, rl.retryAfter);
 
-  const US_TICKERS    = ['NVDA','TSLA','AAPL','META','GOOGL','AMD','MSFT','PLTR','AMZN','NFLX','SPY','QQQ'];
+  // India-first: Indian universe leads the fetch order (TradeIQ is built for an Indian investor).
   const INDIA_TICKERS = ['RELIANCE.NS','TCS.NS','HDFCBANK.NS','INFY.NS','ICICIBANK.NS','HINDUNILVR.NS','SBIN.NS','BAJFINANCE.NS','WIPRO.NS','AXISBANK.NS','TATAMOTORS.NS','ADANIENT.NS'];
+  const US_TICKERS    = ['NVDA','TSLA','AAPL','META','GOOGL','AMD','MSFT','PLTR','AMZN','NFLX','SPY','QQQ'];
 
   // User custom tickers (e.g. ?extra=COIN,WIPRO.NS) appended to the base set.
   // Strict charset filter; existence is then validated by the chart fetch
@@ -29,7 +30,7 @@ export default async function handler(req, res) {
     .filter(s => /^[A-Z0-9.\-]{1,20}$/.test(s))
     .slice(0, 30); // hard cap so a crafted query can't fan out unbounded Yahoo calls
 
-  const ALL = [...new Set([...US_TICKERS, ...INDIA_TICKERS, ...extra])];
+  const ALL = [...new Set([...INDIA_TICKERS, ...US_TICKERS, ...extra])];
 
   // ── Indicator helpers ───────────────────────────────────────────
   function ema(values, period) {

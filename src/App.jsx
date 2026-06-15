@@ -189,6 +189,24 @@ const STRATEGIES=[
 ];
 
 
+// ─── DEFAULTS: simulation capital + NSE holiday calendar ─────────
+// Default SIMULATION capital used in AI prompts / trade-math when the user has
+// no real portfolio value (totalVal) yet. ₹1,00,000 = easy mental math, realistic
+// Indian retail size, intuitive position-sizing %. It is NOT a claim about real
+// capital; when the user has configured actual portfolio capital, that is used
+// instead. Revisit once portfolio-account settings are wired in.
+const SIM_CAP = { INR: 100000, USD: 1200 };            // numbers, for math
+const SIM_CAP_LABEL = { INR: "₹1,00,000", USD: "$1,200" }; // formatted, for prompts
+// NSE/BSE equity full-day trading holidays for 2026 (IST, yyyy-mm-dd). Source:
+// official NSE equity-segment holiday list (15 days; cross-checked NSE + Groww).
+// Jan 15 (Maharashtra municipal elections) is commodity-only and excluded here.
+// Update this set each calendar year from NSE's official circular — do not guess.
+const NSE_HOLIDAYS = new Set([
+  "2026-01-26","2026-03-03","2026-03-26","2026-03-31","2026-04-03","2026-04-14",
+  "2026-05-01","2026-05-28","2026-06-26","2026-09-14","2026-10-02","2026-10-20",
+  "2026-11-10","2026-11-24","2026-12-25",
+]);
+
 // ─── MARKET HEADER ───────────────────────────────────────────────
 function MarketHeader({marketTab,setMarketTab,priceStatus,fetchPrices,lastUpdated}){
   const [,setT]=useState(0);
@@ -197,8 +215,8 @@ function MarketHeader({marketTab,setMarketTab,priceStatus,fetchPrices,lastUpdate
   const fmt=(tz)=>new Date().toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:true,timeZone:tz});
   const fmtD=(tz)=>new Date().toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric",timeZone:tz});
   const isUSOpen=()=>{const n=new Date(),ny=new Date(n.toLocaleString("en-US",{timeZone:"America/New_York"})),d=ny.getDay(),m=ny.getHours()*60+ny.getMinutes();return d>=1&&d<=5&&m>=570&&m<960;};
-  const isINOpen=()=>{const n=new Date(),ist=new Date(n.toLocaleString("en-US",{timeZone:"Asia/Kolkata"})),d=ist.getDay(),m=ist.getHours()*60+ist.getMinutes();return d>=1&&d<=5&&m>=555&&m<930;};
-  const mkts=[{id:"us",flag:"🇺🇸",label:"US Markets",tz:"America/New_York",open:isUSOpen(),hours:"9:30AM–4PM ET",col:C2.blue},{id:"india",flag:"🇮🇳",label:"India NSE",tz:"Asia/Kolkata",open:isINOpen(),hours:"9:15AM–3:30PM IST",col:C2.gold}];
+  const isINOpen=()=>{const n=new Date(),ist=new Date(n.toLocaleString("en-US",{timeZone:"Asia/Kolkata"})),d=ist.getDay(),m=ist.getHours()*60+ist.getMinutes();const ymd=`${ist.getFullYear()}-${String(ist.getMonth()+1).padStart(2,"0")}-${String(ist.getDate()).padStart(2,"0")}`;return d>=1&&d<=5&&m>=555&&m<930&&!NSE_HOLIDAYS.has(ymd);};
+  const mkts=[{id:"india",flag:"🇮🇳",label:"India NSE",tz:"Asia/Kolkata",open:isINOpen(),hours:"9:15AM–3:30PM IST",col:C2.gold},{id:"us",flag:"🇺🇸",label:"US Markets",tz:"America/New_York",open:isUSOpen(),hours:"9:30AM–4PM ET",col:C2.blue}];
   return(<div style={{marginBottom:14}}>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
       {mkts.map(m=>(<div key={m.id} onClick={()=>setMarketTab(m.id)} style={{background:marketTab===m.id?C2.s2:C2.s1,border:`1px solid ${marketTab===m.id?m.col+"50":C2.border}`,borderRadius:7,padding:"10px 12px",cursor:"pointer",transition:"all 0.15s"}}>
@@ -263,7 +281,7 @@ function TradeIQ({ session }) {
   const [newH,setNewH] = useState({ticker:"",name:"",shares:"",avgCost:"",price:"",sector:"Tech",meta:null});
   const [newT,setNewT] = useState({ticker:"",side:"BUY",entry:"",stop:"",target:"",shares:"",strategy:"EMA Pullback",notes:"",date:new Date().toISOString().split("T")[0],meta:null,thesisType:"",expectations:"",reality:"",evidence:"",bearCase:"",invalidation:"",confidence:60,lineage:null});
   const [calcE,setCalcE]=useState(""); const [calcS,setCalcS]=useState(""); const [calcR,setCalcR]=useState("2"); const [calcRes,setCalcRes]=useState(null);
-  const [marketTab,setMarketTab]=useState("us");
+  const [marketTab,setMarketTab]=useState("india"); // India-first: NSE is the default landing market
   const [customUS,setCustomUS]=useState([]);
   const [customIndia,setCustomIndia]=useState([]);
   const [addTickerInput,setAddTickerInput]=useState("");
@@ -450,7 +468,7 @@ function TradeIQ({ session }) {
       const realizedR=rMultipleOf(t);
       const payload={ticker:t.ticker,name:t.name,currency:t.currency,sector:t.sector||null,side:t.side,entry:+t.entry||null,exit:+t.exit||null,stop:+t.stop||null,target:+t.target||null,shares:+t.shares||null,strategy:t.strategy,thesis_type:t.thesisType||null,market_expectations:t.expectations||null,reality:t.reality||null,evidence:t.evidence||null,bear_case:t.bearCase||null,invalidation:t.invalidation||null,confidence:t.thesisConfidence??null,notes:t.notes||"(none logged)",date:t.date,realizedR:realizedR==null?null:+realizedR.toFixed(2),pnl:+pnlOf(t).toFixed(2)};
       let token=null; if(SUPABASE_READY){try{const {data}=await db.auth.getSession();token=data.session?.access_token??null;}catch{}}
-      const res=await fetch("/api/review",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:`Bearer ${token}`}:{})},body:JSON.stringify({trade:payload,context:`Capital ₹5,000, max 2% risk/trade, min 1:2 R:R. Market view: ${marketTab==="us"?"US (NYSE/NASDAQ)":"India NSE"}.`})});
+      const res=await fetch("/api/review",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:`Bearer ${token}`}:{})},body:JSON.stringify({trade:payload,context:`Capital ${payload.currency==="USD"?SIM_CAP_LABEL.USD:SIM_CAP_LABEL.INR} (default simulation capital), max 2% risk/trade, min 1:2 R:R. Market view: ${marketTab==="us"?"US (NYSE/NASDAQ)":"India NSE"}.`})});
       const data=await res.json();
       if(data.error)throw new Error(data.error);
       const norm=normalizeReview(data.review, realizedR);
@@ -548,10 +566,14 @@ function TradeIQ({ session }) {
       const hdrs=token?{Authorization:`Bearer ${token}`}:undefined;
       // REAL sources (P3.1): dated news headlines + SEC filings index, fetched in
       // parallel, best-effort — a sources outage degrades the brief, never blocks it.
+      // EDGAR (SEC filings + XBRL facts) covers US registrants only — skip both
+      // for Indian (.NS/.BO) listings so the India research flow isn't cluttered
+      // with "unsupported" notes. News works globally and is always fetched.
+      const edgarOk=inferCurrency(o.ticker)!=="INR";
       const [newsRes,filRes,factsRes]=await Promise.all([
         fetch(`/api/news?ticker=${encodeURIComponent(o.ticker)}`,{headers:hdrs}).then(r=>r.json()).catch(()=>null),
-        fetch(`/api/filings?ticker=${encodeURIComponent(o.ticker)}`,{headers:hdrs}).then(r=>r.json()).catch(()=>null),
-        fetch(`/api/facts?ticker=${encodeURIComponent(o.ticker)}`,{headers:hdrs}).then(r=>r.json()).catch(()=>null),
+        edgarOk?fetch(`/api/filings?ticker=${encodeURIComponent(o.ticker)}`,{headers:hdrs}).then(r=>r.json()).catch(()=>null):Promise.resolve(null),
+        edgarOk?fetch(`/api/facts?ticker=${encodeURIComponent(o.ticker)}`,{headers:hdrs}).then(r=>r.json()).catch(()=>null):Promise.resolve(null),
       ]);
       const sources=buildSources({news:newsRes?.news,filings:filRes?.filings,note:filRes?.note},now);
       // Hard XBRL fundamentals (P3.2a) — deterministic, zero-LLM; stored so the
@@ -1050,7 +1072,7 @@ LABEL EVERY CLAIM, never blended: [FACT] verified · [ASSUMPTION] reasonable but
 
 THESIS (when assessing any stock): Thesis (1 sentence) · Why it could work · Why it could fail · Evidence for · Evidence against · Critical assumptions · Invalidating conditions · Confidence 0-100% · Evidence strength 0-100% · Status: Strengthening/Stable/Weakening/Broken. Quote confidence honestly; low confidence is a valid output.
 
-RISK: every idea ⇒ worst-case scenario + rough probability + impact. Flag hidden concentration (e.g. NVDA+AMD+TSM+SMCI = ONE AI/semis bet). Capital ₹5,000; ≤2% risk/trade; always a stop; min 1:2 R:R; no leverage/options; position = (capital×2%)÷(entry−stop).
+RISK: every idea ⇒ worst-case scenario + rough probability + impact. Flag hidden concentration (e.g. NVDA+AMD+TSM+SMCI = ONE AI/semis bet). Default simulation capital ₹1,00,000 (use the user's real portfolio value when set); ≤2% risk/trade; always a stop; min 1:2 R:R; no leverage/options; position = (capital×2%)÷(entry−stop).
 
 CURRENCY: quote each stock in its OWN symbol (₹ Indian listings, $ US). NEVER add or compare ₹ and $ as one number. Performance is in R-multiples (currency-agnostic); money figures stay per-currency.
 
@@ -1061,8 +1083,8 @@ PORTFOLIO (${holdings.length} holdings):
 ${holdLines}${conc?`\nCONCENTRATION: ${conc} — treat same-sector/theme positions as a single correlated bet.`:""}
 
 LIVE PRICES (use these EXACT prices for any entry/stop/target; if a stock isn't here, ask for its price):
-US ($): ${wl(US_WATCHLIST)||"loading"}
 INDIA (₹): ${wl(INDIA_WATCHLIST)||"loading"}
+US ($): ${wl(US_WATCHLIST)||"loading"}
 
 PERFORMANCE (closed trades, R-multiple based — this is the user's real track record):
 ${perfLine}
@@ -1232,13 +1254,13 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
       <div><div style={{fontFamily:C.display,fontWeight:700,fontSize:15,marginBottom:2}}>Strategy Scanner</div><div style={{fontSize:11,color:C.muted}}>Screening {marketTab==="us"?"US (NYSE/NASDAQ)":"Indian (NSE)"} — {WATCHLIST.length} stocks</div></div>
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-        <Btn small color={marketTab==="us"?C.blue:C.muted} onClick={()=>setMarketTab("us")}>🇺🇸 US</Btn>
         <Btn small color={marketTab==="india"?C.gold:C.muted} onClick={()=>setMarketTab("india")}>🇮🇳 India</Btn>
-        <Btn color={C.gold} onClick={()=>quickAsk(`Scan ${marketTab==="india"?"Indian NSE":"US"} watchlist: ${WATCHLIST.map(w=>`${shortName(w.ticker)} ${symbolFor(w.currency)}${w.price} RSI:${w.rsi}`).join(", ")}. Best strategy, entry, stop, target, position size for ₹5,000 each.`)}>AI Deep Scan →</Btn>
+        <Btn small color={marketTab==="us"?C.blue:C.muted} onClick={()=>setMarketTab("us")}>🇺🇸 US</Btn>
+        <Btn color={C.gold} onClick={()=>quickAsk(`Scan ${marketTab==="india"?"Indian NSE":"US"} watchlist: ${WATCHLIST.map(w=>`${shortName(w.ticker)} ${symbolFor(w.currency)}${w.price} RSI:${w.rsi}`).join(", ")}. Best strategy, entry, stop, target, position size for ${marketTab==="india"?SIM_CAP_LABEL.INR:SIM_CAP_LABEL.USD} each.`)}>AI Deep Scan →</Btn>
       </div>
     </div>
     <Card><div className="tiq-scroll"><table style={{width:"100%",borderCollapse:"collapse",fontSize:T.data}}><thead><tr>{["Stock","Price","EMA20","EMA200","RSI","Signal","Stop","Target","Pos Size"].map(h=>(<th key={h} style={{textAlign:"left",padding:"7px 6px",fontSize:T.caption,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:C.muted,borderBottom:`1px solid ${C.border}`}}>{h==="Signal"?<Term k="signal">Signal</Term>:h}</th>))}</tr></thead>
-    <tbody>{scanResults.map(w=>(<tr key={w.ticker} className="tiq-row" style={{cursor:"pointer"}} onClick={()=>quickAsk(`Full analysis: ${w.ticker} ${w.curr}${w.price} RSI ${w.rsi} EMA20 ${w.curr}${w.ema20} EMA200 ${w.curr}${w.ema200}. Signal: ${w.signal}. Exact entry, stop, target, shares ${w.currency==="INR"?"for ₹5,000":"in $ (capital ₹5,000 ≈ $60)"}.`)}>
+    <tbody>{scanResults.map(w=>(<tr key={w.ticker} className="tiq-row" style={{cursor:"pointer"}} onClick={()=>quickAsk(`Full analysis: ${w.ticker} ${w.curr}${w.price} RSI ${w.rsi} EMA20 ${w.curr}${w.ema20} EMA200 ${w.curr}${w.ema200}. Signal: ${w.signal}. Exact entry, stop, target, shares ${w.currency==="INR"?"for "+SIM_CAP_LABEL.INR:"in $ (capital ~"+SIM_CAP_LABEL.USD+")"}.`)}>
       <td style={{padding:"9px 6px"}}><TickerID size="row" symbol={w.ticker} name={w.name} currency={w.currency} nameMax={90}/></td>
       <td style={{padding:"9px 6px"}}><div><Money value={w.price} currency={w.currency} code={false}/></div><div style={{fontSize:T.caption,color:w.chg>=0?C.green:C.red}}>{ps(w.chg)}{w.chg}%</div></td>
       <td style={{padding:"9px 6px"}}><div>{w.curr}{w.ema20}</div><div style={{fontSize:T.caption,color:Math.abs(w.price-w.ema20)/w.ema20<0.025?C.green:C.muted}}>{Math.abs(w.price-w.ema20)/w.ema20<0.025?"Near ✓":`${f(((w.price-w.ema20)/w.ema20)*100)}%`}</div></td>
@@ -1254,7 +1276,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
         <div style={{width:130}}><Inp label={`Entry (${calcSym})`} type="number" value={calcE} onChange={e=>setCalcE(e.target.value)} placeholder={calcCur==="INR"?"2750.00":"205.50"}/></div>
         <div style={{width:130}}><Inp label={`Stop-Loss (${calcSym})`} type="number" value={calcS} onChange={e=>setCalcS(e.target.value)} placeholder={calcCur==="INR"?"2680.00":"198.00"}/></div>
         <div style={{width:90}}><Inp label="Risk %" type="number" value={calcR} onChange={e=>setCalcR(e.target.value)} placeholder="2"/></div>
-        <Btn solid color={C.accent} onClick={()=>{const e=+calcE,s=+calcS,r=+calcR/100||0.02;if(!e||!s||e<=s){setCalcRes(null);return;}const cap=totalVal||59;const rps=e-s;const dr=cap*r;const sh=dr/rps;setCalcRes({shares:f(sh,3),cost:f(sh*e),loss:f(dr),rps:f(rps),t2:f(e+rps*2),t3:f(e+rps*3)});}}>Calculate</Btn>
+        <Btn solid color={C.accent} onClick={()=>{const e=+calcE,s=+calcS,r=+calcR/100||0.02;if(!e||!s||e<=s){setCalcRes(null);return;}const cap=totalVal||(calcCur==="INR"?SIM_CAP.INR:SIM_CAP.USD);const rps=e-s;const dr=cap*r;const sh=dr/rps;setCalcRes({shares:f(sh,3),cost:f(sh*e),loss:f(dr),rps:f(rps),t2:f(e+rps*2),t3:f(e+rps*3)});}}>Calculate</Btn>
       </div>
       {calcRes&&(<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:10,marginTop:14}}>{[["Shares",calcRes.shares,C.accent],["Cost",<Money value={calcRes.cost} currency={calcCur} size={14} color={C.text}/>,C.text],["Max Loss",<Money value={calcRes.loss} currency={calcCur} size={14} color={C.red}/>,C.red],["Risk/Share",<Money value={calcRes.rps} currency={calcCur} size={14} color={C.muted}/>,C.muted],["Target 1:2",<Money value={calcRes.t2} currency={calcCur} size={14} color={C.green}/>,C.green],["Target 1:3",<Money value={calcRes.t3} currency={calcCur} size={14} color={C.green}/>,C.green]].map(([l,v,c])=>(<div key={l} style={{background:C.s2,border:`1px solid ${C.border}`,borderRadius:5,padding:10}}><div style={{fontSize:T.caption,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:3}}>{l}</div><div style={{fontFamily:C.display,fontWeight:700,color:c,fontSize:14}}>{v}</div></div>))}</div>)}
     </Card>
@@ -1266,7 +1288,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
       <div style={{fontSize:11,color:C.muted}}>Click any strategy for an AI deep-dive.</div>
       <Btn color={C.gold} onClick={()=>quickAsk("Design a new trading strategy for US tech stocks June 2026. Give: name, type, exact entry/exit rules, stop method, win rate estimate, best market conditions, and 3 example setups.")}>+ Build New Strategy</Btn>
     </div>
-    {STRATEGIES.map(s=>(<Card key={s.id} style={{borderLeft:`3px solid ${s.color}`,cursor:"pointer"}} onClick={()=>quickAsk(`Deep dive on ${s.name}: exact entry/exit rules, best market conditions, common mistakes, 3 current stock examples, improvement tips for a ₹5,000 beginner.`)}>
+    {STRATEGIES.map(s=>(<Card key={s.id} style={{borderLeft:`3px solid ${s.color}`,cursor:"pointer"}} onClick={()=>quickAsk(`Deep dive on ${s.name}: exact entry/exit rules, best market conditions, common mistakes, 3 current stock examples, improvement tips for a beginner with ${SIM_CAP_LABEL.INR}.`)}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:10}}>
         <div style={{flex:1}}><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}><span style={{fontFamily:C.display,fontWeight:800,fontSize:15}}>{s.name}</span><Tag c={s.color}>{s.type}</Tag></div><div style={{fontSize:T.data,color:C.muted,lineHeight:1.6,maxWidth:500}}>{s.rules}</div></div>
         <div style={{display:"flex",gap:16}}>{[["Win Rate (historical)",`${s.winRate}%`,s.color],["R:R",s.rr,C.text]].map(([l,v,c])=>(<div key={l} style={{textAlign:"center"}}><div style={{fontSize:T.caption,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:3}}>{l==="R:R"?<Term k="rr">R:R</Term>:l}</div><div style={{fontFamily:C.display,fontWeight:700,color:c,fontSize:15}}>{v}</div></div>))}</div>
@@ -1274,7 +1296,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
       <div style={{marginTop:10,height:3,background:C.dim,borderRadius:2,overflow:"hidden"}}><div style={{height:"100%",width:`${s.winRate}%`,background:s.color,borderRadius:2}}/></div>
     </Card>))}
     <Card><CT>EMA Pullback — Algorithm Logic</CT>
-      <pre style={{fontSize:T.caption,color:C.green,lineHeight:1.8,overflowX:"auto",background:C.s2,padding:14,borderRadius:6}}>{`FUNCTION ema_pullback_scan(ticker, data, capital=5000):
+      <pre style={{fontSize:T.caption,color:C.green,lineHeight:1.8,overflowX:"auto",background:C.s2,padding:14,borderRadius:6}}>{`FUNCTION ema_pullback_scan(ticker, data, capital=100000):
   price    = data.close[-1]
   ema_20   = calc_ema(data.close, 20)
   ema_200  = calc_ema(data.close, 200)
@@ -1345,7 +1367,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
           <textarea className="tiq-input" value={newT.evidence} onChange={e=>setNewT(p=>({...p,evidence:e.target.value}))} placeholder="TSMC guidance, cloud capex, supplier commentary…" style={{background:C.s1,border:`1px solid ${C.border}`,borderRadius:5,padding:"7px 10px",color:C.text,fontFamily:C.mono,fontSize:T.data,width:"100%",height:34,resize:"vertical"}}/>
         </div>
       </div>
-      {newT.entry&&newT.stop&&+newT.entry>+newT.stop&&(()=>{const tCur=newT.meta?.currency;const cap=tCur==="INR"?5000:(totalVal||59);const rps=+newT.entry-+newT.stop;return(<div style={{background:C.s2,border:`1px solid ${C.border}`,borderRadius:6,padding:12,marginBottom:10}}>
+      {newT.entry&&newT.stop&&+newT.entry>+newT.stop&&(()=>{const tCur=newT.meta?.currency;const cap=tCur==="INR"?SIM_CAP.INR:(totalVal||SIM_CAP.USD);const rps=+newT.entry-+newT.stop;return(<div style={{background:C.s2,border:`1px solid ${C.border}`,borderRadius:6,padding:12,marginBottom:10}}>
         <div style={{fontSize:T.caption,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:8}}>Trade Math · capital <Money value={cap} currency={tCur} decimals={0} size={T.caption} color={C.muted}/></div>
         <div style={{display:"flex",gap:18,flexWrap:"wrap"}}>{[["Risk/share",<Money value={rps} currency={tCur} size={14} color={C.red}/>,C.red],["Max loss",<Money value={cap*0.02} currency={tCur} size={14} color={C.red}/>,C.red],["Ideal shares",`${f(cap*0.02/rps,3)}`,C.accent],["R:R",newT.target?`1:${f((+newT.target-+newT.entry)/rps)}`:"-",(+newT.target-+newT.entry)/rps>=2?C.green:C.red]].map(([l,v,c])=>(<div key={l}><div style={{fontSize:T.caption,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:2}}>{l}</div><div style={{fontFamily:C.display,fontWeight:700,color:c,fontSize:14}}>{v}</div></div>))}</div>
       </div>);})()}
@@ -1355,7 +1377,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
       </div>);})()}
       <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
         <Btn solid color={tValid?C.green:C.muted} onClick={addTrade}>{syncStatus==="syncing"?<Spinner/>:"✓ Save Trade"}</Btn>
-        <Btn color={C.accent} onClick={()=>{const s=symbolFor(newT.meta?.currency);quickAsk(`Review before I trade: ${newT.ticker} ${newT.side} entry ${s}${newT.entry} stop ${s}${newT.stop} target ${s}${newT.target}. Valid setup? Risk correct for ${newT.meta?.currency==="INR"?"₹5,000":"my capital (~$60 / ₹5,000)"}?`);}}>AI Review First</Btn>
+        <Btn color={C.accent} onClick={()=>{const s=symbolFor(newT.meta?.currency);quickAsk(`Review before I trade: ${newT.ticker} ${newT.side} entry ${s}${newT.entry} stop ${s}${newT.stop} target ${s}${newT.target}. Valid setup? Risk correct for ${newT.meta?.currency==="INR"?SIM_CAP_LABEL.INR:"my capital (~"+SIM_CAP_LABEL.USD+" / "+SIM_CAP_LABEL.INR+")"}?`);}}>AI Review First</Btn>
         {newT.ticker&&!newT.meta&&<span style={{fontSize:T.caption,color:C.gold}}>↑ Pick a ticker from the dropdown</span>}
         {newT.meta&&newT.entry&&!thesisComplete(newT)&&(()=>{const L={thesisType:"thesis type",expectations:"market expects",reality:"reality",bearCase:"bear case",invalidation:"invalidation",confidence:"confidence"};return <span style={{fontSize:T.caption,color:C.gold}}>↑ Complete the thesis: {missingThesisFields(newT).map(k=>L[k]||k).join(", ")}</span>;})()}
         {newT.meta&&<span style={{fontSize:T.caption,color:C.muted}}>{newT.meta.name} · {newT.meta.exchange} · {newT.meta.currency}</span>}

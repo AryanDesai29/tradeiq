@@ -11,7 +11,7 @@ const INDIA = ['RELIANCE.NS', 'TCS.NS', 'INFY.NS'];
 test('symbolFor reads currency, not tickers', () => {
   assert.equal(symbolFor('USD'), '$');
   assert.equal(symbolFor('INR'), '₹');
-  assert.equal(symbolFor(undefined), '$'); // safe default
+  assert.equal(symbolFor(undefined), '₹'); // India-first default when currency is absent
 });
 
 test('inferCurrency (boundary fallback only) maps the required tickers', () => {

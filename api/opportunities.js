@@ -57,7 +57,13 @@ export default async function handler(req, res) {
     price: s.price, chgPct: s.chg, rsi: s.rsi, ema20: s.ema20, ema200: s.ema200,
   }));
   const lensBlock = typeof lens === 'string' && lens.trim() ? `\nUSER TRACK RECORD (real, from their journal):\n${lens.trim().slice(0, 700)}` : '';
-  const userMsg = `Market: ${market === 'india' ? 'India NSE' : 'US (NYSE/NASDAQ)'}. Propose up to ${n} of the strongest opportunities (skip uninteresting names).${lensBlock}\nStocks:\n${JSON.stringify(universe, null, 0)}`;
+  // India-first: when the user is on the NSE/BSE tab, frame discovery for an Indian
+  // investor — rupee sizing, Indian market structure, ₹1,00,000 default capital —
+  // while keeping the same anti-fabrication discipline (no invented India figures).
+  const marketCtx = market === 'india'
+    ? `Market: India (NSE/BSE). Prices are in ₹ (INR); size positions in rupees against a default simulation capital of ₹1,00,000 (use the user's real capital if given), ≤2% risk per trade. These are large, liquid Indian large-caps — reason about Indian market structure (Indian IT, private vs PSU banks, FMCG, autos/EV, energy/financials) and Indian retail context. Do NOT fabricate India-specific quarterly numbers, guidance, or regulatory/policy events you were not given.`
+    : `Market: US (NYSE/NASDAQ). Prices are in $ (USD); size positions in dollars, ≤2% risk per trade.`;
+  const userMsg = `${marketCtx}\nPropose up to ${n} of the strongest opportunities (skip uninteresting names).${lensBlock}\nStocks:\n${JSON.stringify(universe, null, 0)}`;
 
   try {
     const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {

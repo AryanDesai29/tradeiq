@@ -66,7 +66,7 @@ export function TickerID({ symbol, name, exchange, currency, sector, size = "row
 export function Money({ value, currency, signed = false, decimals, size = T.data, bold = true, color, code = true, style = {} }) {
   const v = Number(value);
   if (!isFinite(v)) return <span style={{ color: C.dim, fontSize: size }}>—</span>;
-  const cur = currency || "USD";
+  const cur = currency || "INR";
   // Large whole amounts (aggregates like ₹1,28,000) drop the ".00" noise;
   // anything fractional or price-sized keeps full decimalsFor precision.
   const d = decimals ?? (Math.abs(v) >= 1000 && v % 1 === 0 ? 0 : decimalsFor(cur));
