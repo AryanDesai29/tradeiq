@@ -23,7 +23,9 @@ const fmtDate = (d) => { try { return new Date(d).toLocaleDateString("en-IN", { 
 const FEED_COLOR = { live: C.accent, scan: C.muted, discover: C.gold, pick: C.blue, research: C.blue, council: C.gold, decision: C.accent, entry: C.green, exit: C.red, wait: C.muted, error: C.red };
 const relTime = (ts) => { const s = Math.max(0, Math.round((Date.now() - ts) / 1000)); if (s < 60) return `${s}s`; const m = Math.round(s / 60); return m < 60 ? `${m}m` : `${Math.round(m / 60)}h`; };
 
-export default function Autopilot({ account, trades = [], stats, busy, msg, priceOf = () => null, onRun, onCouncilRun, onSeed, onReset, live = false, feed = [], onToggleLive, councilReadyCount = 0 }) {
+const IDEA_STATUS = { formed: { l: "thinking", c: C.muted }, taken: { l: "taken", c: C.green }, passed: { l: "passed", c: C.dim } };
+
+export default function Autopilot({ account, trades = [], stats, busy, msg, priceOf = () => null, onRun, onCouncilRun, onSeed, onReset, live = false, feed = [], onToggleLive, ideas = [], councilReadyCount = 0 }) {
   const [openLog, setOpenLog] = useState({});
   const open = trades.filter((t) => t.status === "open");
   const closed = trades.filter((t) => t.status === "closed");
@@ -82,6 +84,24 @@ export default function Autopilot({ account, trades = [], stats, busy, msg, pric
                 <span style={{ fontSize: T.caption, color: C.text, lineHeight: 1.5 }}>{e.text}</span>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Nova's ideas — her own persistent memory + track record */}
+      {ideas.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontFamily: C.display, fontWeight: 700, fontSize: 13, letterSpacing: "0.12em", textTransform: "uppercase", color: C.muted, margin: "4px 0 8px" }}>Nova's ideas ({ideas.length})</div>
+          <div style={{ display: "grid", gap: 6 }}>
+            {ideas.slice(0, 20).map((o) => { const st = IDEA_STATUS[o.status] || IDEA_STATUS.formed; return (
+              <div key={o.id} style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <span style={{ minWidth: 0 }}><span style={{ fontFamily: C.mono, fontWeight: 700, fontSize: 13 }}>{shortName(o.ticker)}</span><span style={{ color: C.muted, fontSize: T.caption, marginLeft: 8 }}>{o.thesis_type || "thesis"}{o.confidence != null ? ` · conv ${o.confidence}%` : ""}</span></span>
+                <span style={{ display: "flex", gap: 10, alignItems: "baseline" }}>
+                  {o.council_verdict && <span style={{ fontSize: T.caption, color: C.muted }}>🏛️ {o.council_verdict}{o.council_confidence != null ? ` ${o.council_confidence}%` : ""}</span>}
+                  <span style={{ fontSize: T.micro, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: st.c }}>{st.l}</span>
+                </span>
+              </div>
+            ); })}
           </div>
         </div>
       )}
