@@ -10,15 +10,16 @@ const fmtD = (d) => { try { return new Date(d).toLocaleDateString("en-IN", { day
 
 const KIND = {
   // world
-  discovered_idea: { i: "💡", c: C.blue }, rs_leader: { i: "📈", c: C.green },
+  discovered_idea: { i: "💡", c: C.blue }, rs_leader: { i: "📈", c: C.green }, news_catalyst: { i: "🗞️", c: C.gold },
   // portfolio
   conviction_gap: { i: "🎯", c: C.green }, stale_thesis: { i: "🕰️", c: C.gold },
   undecided_research: { i: "❓", c: C.blue }, rule_violation: { i: "⚠️", c: C.red },
   no_stop: { i: "🛑", c: C.red }, rule_review: { i: "↻", c: C.gold },
 };
 
-function LeadCard({ l }) {
+function LeadCard({ l, onInvestigate }) {
   const k = KIND[l.kind] || { i: "•", c: C.muted };
+  const canInvestigate = l.status === "research_candidate" && typeof onInvestigate === "function";
   return (
     <div style={{ background: C.s2, border: `1px solid ${C.border}`, borderLeft: `3px solid ${k.c}`, borderRadius: 10, padding: "12px 14px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
@@ -29,10 +30,12 @@ function LeadCard({ l }) {
           <span style={{ fontSize: T.micro, color: C.muted, fontFamily: C.mono }}>{l.priority}</span>
         </div>
       </div>
-      <div style={{ margin: "8px 0 6px", display: "grid", gap: 3 }}>
+      <div style={{ margin: "8px 0 8px", display: "grid", gap: 3 }}>
         {l.reasons.map((r, i) => <div key={i} style={{ fontSize: T.caption, color: C.muted }}>✓ {r}</div>)}
       </div>
-      <div style={{ fontSize: T.caption, fontWeight: 700, color: k.c }}>→ {l.action}</div>
+      {canInvestigate
+        ? <button onClick={() => onInvestigate(l)} style={{ background: k.c, border: "none", color: C.bg, fontFamily: C.display, fontWeight: 700, fontSize: 12, letterSpacing: "0.06em", textTransform: "uppercase", padding: "7px 13px", borderRadius: 7, cursor: "pointer" }}>🔬 {l.action || "Investigate"} →</button>
+        : <div style={{ fontSize: T.caption, fontWeight: 700, color: k.c }}>→ {l.action}</div>}
     </div>
   );
 }
@@ -44,7 +47,7 @@ const SectionHead = ({ children, sub }) => (
   </div>
 );
 
-export default function OpportunityQueue({ world = [], portfolio = [], gated = [], memory = [], memoryStats = null }) {
+export default function OpportunityQueue({ world = [], portfolio = [], gated = [], memory = [], memoryStats = null, onInvestigate }) {
   return (
     <div style={{ maxWidth: 820, margin: "0 auto" }}>
       <div style={{ fontFamily: C.display, fontWeight: 800, fontSize: 22, marginBottom: 4 }}>🎯 Opportunity Queue</div>
@@ -59,7 +62,7 @@ export default function OpportunityQueue({ world = [], portfolio = [], gated = [
           <div style={{ background: C.s1, border: `1px dashed ${C.border}`, borderRadius: 10, padding: 16, color: C.muted, fontSize: T.caption }}>
             No world candidates surfaced right now. Generate ideas in Opportunities, or refresh prices — relative-strength leaders and AI-surfaced theses appear here. <span style={{ color: C.dim }}>(V2 adds insider filings, earnings revisions and macro shifts.)</span>
           </div>
-        ) : <div style={{ display: "grid", gap: 10 }}>{world.map((l) => <LeadCard key={l.id} l={l} />)}</div>}
+        ) : <div style={{ display: "grid", gap: 10 }}>{world.map((l) => <LeadCard key={l.id} l={l} onInvestigate={onInvestigate} />)}</div>}
       </div>
 
       {/* PORTFOLIO — actions across your own data */}
