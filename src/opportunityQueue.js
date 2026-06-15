@@ -108,6 +108,47 @@ export function opportunityQueue({ holdings = [], journal = [], opportunities = 
   return leads;
 }
 
+// ─── WORLD candidates ("monitor the world") — research LEADS, never buy calls ──
+// The Hypothesis Hunter's V1 surface, built ONLY from data TradeIQ already has
+// (no scraping, no fabrication, India-compatible). Each item is a "research
+// candidate" → investigate via Research → Council; it never asserts alpha.
+//   V1 signals: (a) AI-surfaced ideas not yet acted on; (b) relative-strength /
+//   momentum leaders from the watchlist's live prices.
+//   V2 (deferred, per docs/ARCHITECTURE-PILLARS.md): insider Form 4, XBRL
+//   buybacks, earnings revisions via EDGAR (US) — once proven worthwhile.
+export function worldCandidates({ watchlist = [], opportunities = [], holdings = [], limit = 6 } = {}) {
+  const held = new Set(holdings.map((h) => h.ticker));
+  const oppTickers = new Set(opportunities.map((o) => o.ticker));
+  const out = [];
+
+  // (a) AI-surfaced ideas the investor hasn't acted on yet.
+  for (const o of opportunities) {
+    const undecided = !["logged", "archived", "dismissed"].includes(o.status) && !o.research_brief;
+    if (undecided && !held.has(o.ticker)) {
+      out.push({ id: `world_opp_${o.id || o.ticker}`, source: "world", kind: "discovered_idea", ticker: o.ticker, status: "research_candidate",
+        title: `${shortName(o.ticker)} — ${o.thesis_type || "idea"} (AI-surfaced)`,
+        reasons: [o.reality_hypothesis || o.market_expectations || "Surfaced by Opportunity Discovery", o.confidence != null ? `Model conviction ${o.confidence}%` : null].filter(Boolean),
+        action: "Investigate (research → council)", priority: clamp(40 + (o.confidence || 0) * 0.3) });
+    }
+  }
+
+  // (b) Relative-strength leaders from live prices — uptrend with room, not held,
+  // not already on the board. Deterministic, India-friendly, never a "buy".
+  for (const w of watchlist) {
+    if (!w || w.price == null || held.has(w.ticker) || oppTickers.has(w.ticker)) continue;
+    const uptrend = w.ema200 && w.ema20 && w.price > w.ema200 && w.ema20 > w.ema200;
+    if (uptrend && w.rsi >= 52 && w.rsi <= 66) {
+      out.push({ id: `world_rs_${w.ticker}`, source: "world", kind: "rs_leader", ticker: w.ticker, status: "research_candidate",
+        title: `${shortName(w.ticker)} — momentum / relative-strength leader`,
+        reasons: ["Price above 200-EMA; 20-EMA above 200-EMA (established uptrend)", `RSI ${w.rsi} — strength with room to run`, w.chg != null ? `${w.chg >= 0 ? "+" : ""}${w.chg}% today` : null].filter(Boolean),
+        action: "Investigate (research → council)", priority: clamp(35 + (w.rsi - 52) * 1.2) });
+    }
+  }
+
+  out.sort((a, b) => b.priority - a.priority);
+  return out.slice(0, limit);
+}
+
 // Statistical insights are LOCKED until the track record can support them — we
 // surface the lock honestly rather than fabricate the claim (Conditioning Rule).
 export function gatedInsights({ journal = [] } = {}, minClosed = 30) {
