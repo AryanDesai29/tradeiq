@@ -9,6 +9,7 @@
 import { personalAlpha } from "./alpha.js";
 import { researchScore } from "./research.js";
 import { VOTE_SCORE } from "./council.js";
+import { THEME_MAP } from "./portfolio.js";
 
 export const PIPELINE_STATES = ["discovered", "researching", "council_review", "ready", "logged", "archived"];
 export const STATE_LABEL = {
@@ -122,6 +123,36 @@ export function scoreOpportunity(opp, lens) {
     ? clamp(0.45 * edge + 0.35 * research + 0.20 * (100 - risk))
     : clamp(0.35 * edge + 0.25 * research + 0.25 * council + 0.15 * (100 - risk));
   return { edge, research, council, risk, composite };
+}
+
+// ─── DECISION-CONTEXT SNAPSHOT (lineage) ──────────────────────────────────────
+// Freezes the decision context of an opportunity at the moment it becomes a trade,
+// so the idea → trade → outcome chain survives the trade boundary. Keys are
+// snake_case to match the tradeiq_journal columns added in migration 0011, so the
+// result spreads straight into the insert. Pure + deterministic (unit-tested).
+//
+// opportunity_id is null for offline opportunities (string `local_*` ids never
+// reach the DB). decision_sector uses the app's own theme/sector map — the
+// opportunity carries no sector of its own — and is null for unmapped tickers
+// (no fabrication). council_session_hash is the opportunity's stored topic_hash,
+// the durable trade → debate link (see 0011).
+export function lineageSnapshot(opp) {
+  if (!opp || typeof opp !== "object") return {};
+  const digests = opp.research_digests;
+  return {
+    opportunity_id:        typeof opp.id === "number" ? opp.id : null,
+    council_session_hash:  opp.council_session_hash || null,
+    council_verdict:       opp.council_verdict || null,
+    council_confidence:    opp.council_confidence ?? null,
+    generation_confidence: opp.confidence ?? null,
+    opp_risk_level:        opp.risk_level || null,
+    decision_sector:       THEME_MAP[opp.ticker] || null,
+    price_at_gen:          opp.price_at_gen ?? null,
+    opp_researched_at:     opp.researched_at || null,
+    research_brief_present: !!opp.research_brief,
+    filing_digest_count:   digests && typeof digests === "object" ? Object.keys(digests).length : 0,
+    facts_present:         !!opp.research_facts,
+  };
 }
 
 // Live pipeline ranked by composite, archived excluded.

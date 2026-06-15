@@ -9,7 +9,8 @@ import { performance, byCurrency, byStrategy, rMultipleOf, pnlOf } from "./analy
 import { normalizeReview } from "./reviews.js";
 import { THESIS_TYPES, THESIS_FIELD_MAX, thesisComplete, missingThesisFields } from "./thesis.js";
 import { normalizeOpportunities } from "./opportunities.js";
-import { personalLens, lensBlock, pipelineState, scoreOpportunity } from "./pipeline.js";
+import { personalLens, lensBlock, pipelineState, scoreOpportunity, lineageSnapshot } from "./pipeline.js";
+import { hashTopic } from "./council.js";
 import { defaultTasks, mergeTasks, queuedTasks, tasksFromCouncil, applyFindings, normalizeBrief, researchDone } from "./analyst.js";
 import { buildSources, sourcesBlock, isReadable } from "./sources.js";
 import { normalizeFacts, hasFacts, factsBlock } from "./facts.js";
@@ -253,7 +254,7 @@ function TradeIQ({ session }) {
   // holding/trade can only be saved when meta.symbol matches the ticker field —
   // i.e. the user picked from autocomplete rather than free-typing.
   const [newH,setNewH] = useState({ticker:"",name:"",shares:"",avgCost:"",price:"",sector:"Tech",meta:null});
-  const [newT,setNewT] = useState({ticker:"",side:"BUY",entry:"",stop:"",target:"",shares:"",strategy:"EMA Pullback",notes:"",date:new Date().toISOString().split("T")[0],meta:null,thesisType:"",expectations:"",reality:"",evidence:"",bearCase:"",invalidation:"",confidence:60});
+  const [newT,setNewT] = useState({ticker:"",side:"BUY",entry:"",stop:"",target:"",shares:"",strategy:"EMA Pullback",notes:"",date:new Date().toISOString().split("T")[0],meta:null,thesisType:"",expectations:"",reality:"",evidence:"",bearCase:"",invalidation:"",confidence:60,lineage:null});
   const [calcE,setCalcE]=useState(""); const [calcS,setCalcS]=useState(""); const [calcR,setCalcR]=useState("2"); const [calcRes,setCalcRes]=useState(null);
   const [marketTab,setMarketTab]=useState("us");
   const [customUS,setCustomUS]=useState([]);
@@ -345,10 +346,9 @@ function TradeIQ({ session }) {
 
   const loadAll = async()=>{
     setSS("syncing");
-    // Ensure a preferences row exists for this user (best-effort, non-blocking)
-    if (SUPABASE_READY && session) {
-      db.from("tradeiq_profiles").upsert({ user_id: userId }, { onConflict: "user_id", ignoreDuplicates: true });
-    }
+    // (Removed: a best-effort tradeiq_profiles upsert that only wrote {user_id} and
+    // was never read back — a dead write. The preferences table is preserved in the
+    // schema baseline (migration 0000) for future use; it is just not wired yet.)
     try {
       const [{data:h},{data:j}] = await Promise.all([
         db.from("tradeiq_holdings").select("*").order("created_at",{ascending:true}),
@@ -397,8 +397,13 @@ function TradeIQ({ session }) {
   const addTrade=async()=>{
     if(!tValid)return;setSS("syncing"); // tValid ⇒ ticker came from a selected search result
     const m=newT.meta;
-    const {data,error}=await db.from("tradeiq_journal").insert({user_id:userId,ticker:m.symbol,name:m.name,exchange:m.exchange,currency:m.currency,sector:m.sector||null,industry:m.industry||null,side:newT.side,entry_price:+newT.entry||null,shares:+newT.shares||null,stop_loss:+newT.stop||null,target:+newT.target||null,strategy:newT.strategy,notes:newT.notes,trade_date:newT.date,closed:false,thesis_type:newT.thesisType,thesis_expectations:newT.expectations.trim(),thesis_reality:newT.reality.trim(),thesis_evidence:newT.evidence.trim()||null,thesis_bear_case:newT.bearCase.trim(),thesis_invalidation:newT.invalidation.trim(),thesis_confidence:+newT.confidence}).select().single();
-    if(!error&&data){setJournal(p=>[{id:data.id,ticker:data.ticker,name:data.name,exchange:data.exchange,currency:data.currency,sector:data.sector,industry:data.industry,side:data.side,entry:String(data.entry_price||""),exit:null,shares:String(data.shares||""),stop:String(data.stop_loss||""),target:String(data.target||""),strategy:data.strategy,notes:data.notes,date:data.trade_date,closed:false,closedAt:null,thesisType:data.thesis_type,expectations:data.thesis_expectations,reality:data.thesis_reality,evidence:data.thesis_evidence,bearCase:data.thesis_bear_case,invalidation:data.thesis_invalidation,thesisConfidence:data.thesis_confidence},...p]);setNewT({ticker:"",side:"BUY",entry:"",stop:"",target:"",shares:"",strategy:"EMA Pullback",notes:"",date:new Date().toISOString().split("T")[0],meta:null,thesisType:"",expectations:"",reality:"",evidence:"",bearCase:"",invalidation:"",confidence:60});setShowAddT(false);}
+    // Decision-context snapshot (0011): apply lineage only if it was built for THIS
+    // ticker — guards against stale lineage left by an earlier critiqueAndLog. The
+    // snapshot also backfills sector (opportunities carry none) so opp-originated
+    // trades stop landing with sector=null.
+    const {_ticker:_lt,...linAll}=newT.lineage||{}; const lin=(_lt===m.symbol)?linAll:{};
+    const {data,error}=await db.from("tradeiq_journal").insert({user_id:userId,ticker:m.symbol,name:m.name,exchange:m.exchange,currency:m.currency,sector:m.sector||lin.decision_sector||null,industry:m.industry||null,side:newT.side,entry_price:+newT.entry||null,shares:+newT.shares||null,stop_loss:+newT.stop||null,target:+newT.target||null,strategy:newT.strategy,notes:newT.notes,trade_date:newT.date,closed:false,thesis_type:newT.thesisType,thesis_expectations:newT.expectations.trim(),thesis_reality:newT.reality.trim(),thesis_evidence:newT.evidence.trim()||null,thesis_bear_case:newT.bearCase.trim(),thesis_invalidation:newT.invalidation.trim(),thesis_confidence:+newT.confidence,...lin}).select().single();
+    if(!error&&data){setJournal(p=>[{id:data.id,ticker:data.ticker,name:data.name,exchange:data.exchange,currency:data.currency,sector:data.sector,industry:data.industry,side:data.side,entry:String(data.entry_price||""),exit:null,shares:String(data.shares||""),stop:String(data.stop_loss||""),target:String(data.target||""),strategy:data.strategy,notes:data.notes,date:data.trade_date,closed:false,closedAt:null,thesisType:data.thesis_type,expectations:data.thesis_expectations,reality:data.thesis_reality,evidence:data.thesis_evidence,bearCase:data.thesis_bear_case,invalidation:data.thesis_invalidation,thesisConfidence:data.thesis_confidence},...p]);setNewT({ticker:"",side:"BUY",entry:"",stop:"",target:"",shares:"",strategy:"EMA Pullback",notes:"",date:new Date().toISOString().split("T")[0],meta:null,thesisType:"",expectations:"",reality:"",evidence:"",bearCase:"",invalidation:"",confidence:60,lineage:null});setShowAddT(false);}
     setSS(error?"error":"synced");
   };
   const closeTrade=async(id,exitPrice)=>{const ep=parseFloat(exitPrice);if(isNaN(ep))return;setSS("syncing");const closedAt=new Date().toISOString();await db.from("tradeiq_journal").update({exit_price:ep,closed:true,closed_at:closedAt}).eq("id",id);setJournal(p=>p.map(t=>t.id===id?{...t,exit:String(ep),closed:true,closedAt}:t));setSS("synced");};
@@ -619,7 +624,7 @@ function TradeIQ({ session }) {
       const demands=sess.evidence_hold?.raised||sess.red_flags?.raised||(sess.verdict.required_research||[]).length>0;
       const status=demands&&!researchDone(tasks)?"researching":"ready";
       const rec=sess.verdict.recommendation;
-      const patch={council_verdict:rec,council_confidence:sess.verdict.confidence,research_tasks:tasks,status};
+      const patch={council_verdict:rec,council_confidence:sess.verdict.confidence,council_session_hash:hashTopic({mode:sess.mode||"full",type:topic.type,ticker:topic.ticker,title:topic.title}),research_tasks:tasks,status};
       patch.scores=scoreOpportunity({...opp,...patch},personalLens(journal));
       try{ if(typeof opp.id!=="string") db.from("tradeiq_opportunities").update(patch).eq("id",opp.id).then(()=>{}); }catch{}
 
@@ -653,7 +658,7 @@ function TradeIQ({ session }) {
   // so "the AI builds the thesis, Aryan critiques", then logs it.
   const critiqueAndLog=(o)=>{
     if(digestCount(o.research_digests)>0) logFiling("trade_created_after_filing",{ticker:o.ticker}); // decision followed a filing review
-    setNewT(p=>({...p,ticker:o.ticker,meta:{symbol:o.ticker,name:o.name||o.ticker,exchange:"",currency:o.currency||(marketTab==="india"?"INR":"USD"),sector:null,industry:null},side:"BUY",thesisType:o.thesis_type||"",expectations:(o.market_expectations||"").slice(0,THESIS_FIELD_MAX),reality:(o.reality_hypothesis||"").slice(0,THESIS_FIELD_MAX),evidence:o.evidence||"",bearCase:(o.bear_case||"").slice(0,THESIS_FIELD_MAX),invalidation:(o.invalidation||"").slice(0,THESIS_FIELD_MAX),confidence:o.confidence??60}));
+    setNewT(p=>({...p,ticker:o.ticker,meta:{symbol:o.ticker,name:o.name||o.ticker,exchange:"",currency:o.currency||(marketTab==="india"?"INR":"USD"),sector:null,industry:null},side:"BUY",thesisType:o.thesis_type||"",expectations:(o.market_expectations||"").slice(0,THESIS_FIELD_MAX),reality:(o.reality_hypothesis||"").slice(0,THESIS_FIELD_MAX),evidence:o.evidence||"",bearCase:(o.bear_case||"").slice(0,THESIS_FIELD_MAX),invalidation:(o.invalidation||"").slice(0,THESIS_FIELD_MAX),confidence:o.confidence??60,lineage:{...lineageSnapshot(o),_ticker:o.ticker}}));
     setOppStatus(o.id,"logged"); setShowAddT(true); setTab("journal");
   };
 
