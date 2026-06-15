@@ -88,8 +88,16 @@ capital moves.
    relative-strength / momentum leaders from live prices (US + India). Each is a
    "research candidate → investigate", never a buy. `worldCandidates()` in
    `src/opportunityQueue.js`.
-3. **Layer 2 World V2 — next:** insider Form 4 + earnings-revision + XBRL-buyback
+3. **Opportunity Memory — shipped.** The queue's own feedback loop
+   (`tradeiq_opportunity_memory`, `src/opportunityMemory.js`): every surfaced
+   candidate is recorded with its disposition (ignored / investigated / rejected /
+   traded) and its REAL subsequent price performance — so we learn from what was
+   *ignored* and *rejected*, not just traded. The "which opportunity types work
+   for Aryan" inference is **gated behind sample size** (`memoryStats`), never
+   asserted early; perf is measured, never forecast. This is what makes the queue
+   eventually *adaptive* rather than a static signal router.
+4. **Layer 2 World V2 — next:** insider Form 4 + earnings-revision + XBRL-buyback
    signals (EDGAR already integrated, US) as inputs, every output a Council-routed
-   hypothesis — built once V1's signals prove they generate worthwhile research.
-4. **Scraping periphery — deferred** pending legal + a proven signal→return link.
-5. **Never a news feed.**
+   hypothesis — built once V1's signals + Opportunity Memory prove what's worth surfacing.
+5. **Scraping periphery — deferred** pending legal + a proven signal→return link.
+6. **Never a news feed.**

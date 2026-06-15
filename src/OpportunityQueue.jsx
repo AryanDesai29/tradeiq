@@ -3,6 +3,10 @@
 // (never buy calls). PORTFOLIO = the highest-value actions reasoned across your
 // own data. Every item is a verifiable fact — no scraping, no invented numbers.
 import { C, T } from "./theme.js";
+import { shortName } from "./stock.js";
+
+const DISP = { surfaced: { l: "ignored", c: C.muted }, investigated: { l: "investigated", c: C.blue }, rejected: { l: "rejected", c: C.gold }, traded: { l: "traded", c: C.green } };
+const fmtD = (d) => { try { return new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short" }); } catch { return ""; } };
 
 const KIND = {
   // world
@@ -40,7 +44,7 @@ const SectionHead = ({ children, sub }) => (
   </div>
 );
 
-export default function OpportunityQueue({ world = [], portfolio = [], gated = [] }) {
+export default function OpportunityQueue({ world = [], portfolio = [], gated = [], memory = [], memoryStats = null }) {
   return (
     <div style={{ maxWidth: 820, margin: "0 auto" }}>
       <div style={{ fontFamily: C.display, fontWeight: 800, fontSize: 22, marginBottom: 4 }}>🎯 Opportunity Queue</div>
@@ -76,6 +80,40 @@ export default function OpportunityQueue({ world = [], portfolio = [], gated = [
               <div style={{ marginTop: 5, display: "grid", gap: 3 }}>{g.reasons.map((r, j) => <div key={j} style={{ fontSize: T.caption, color: C.dim }}>{r}</div>)}</div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* OPPORTUNITY MEMORY — what we surfaced & what happened (incl. what you ignored) */}
+      {(memory.length > 0 || (memoryStats && memoryStats.locked)) && (
+        <div style={{ marginTop: 22 }}>
+          <SectionHead sub="Every candidate we surfaced, what you did with it, and what the price did after — so the queue learns what's worth surfacing.">🧠 Opportunity Memory</SectionHead>
+          {memoryStats && (memoryStats.locked ? (
+            <div style={{ background: C.s1, border: `1px dashed ${C.border}`, borderRadius: 10, padding: "11px 13px", marginBottom: 10 }}>
+              <div style={{ fontSize: T.data, fontWeight: 700, color: C.muted }}>🔒 Learning locked — {memoryStats.n}/{memoryStats.minSample} priced records</div>
+              <div style={{ marginTop: 4, fontSize: T.caption, color: C.dim }}>Avg performance by opportunity-type & by disposition (ignored / investigated / rejected) unlocks with more data.</div>
+            </div>
+          ) : (
+            <div style={{ background: C.s2, border: `1px solid ${C.border}`, borderRadius: 10, padding: "11px 13px", marginBottom: 10 }}>
+              <div style={{ fontSize: T.caption, color: C.muted, marginBottom: 5 }}>Avg subsequent performance ({memoryStats.n} records):</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 14 }}>
+                {memoryStats.byKind.map((k) => <span key={k.k} style={{ fontSize: T.caption }}><span style={{ color: C.muted }}>{k.k.replace(/_/g, " ")}</span> <b style={{ color: k.avg >= 0 ? C.green : C.red }}>{k.avg >= 0 ? "+" : ""}{k.avg}%</b> <span style={{ color: C.dim }}>(n{k.n})</span></span>)}
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginTop: 5 }}>
+                {memoryStats.byDisposition.map((d) => <span key={d.k} style={{ fontSize: T.caption }}><span style={{ color: (DISP[d.k] || {}).c || C.muted }}>{(DISP[d.k] || {}).l || d.k}</span> <b style={{ color: d.avg >= 0 ? C.green : C.red }}>{d.avg >= 0 ? "+" : ""}{d.avg}%</b> <span style={{ color: C.dim }}>(n{d.n})</span></span>)}
+              </div>
+            </div>
+          ))}
+          <div style={{ display: "grid", gap: 5 }}>
+            {memory.slice(0, 30).map((r) => { const d = DISP[r.status] || DISP.surfaced; return (
+              <div key={r.id} style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 8, padding: "7px 12px", display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+                <span><span style={{ fontFamily: C.mono, fontWeight: 700, fontSize: 13 }}>{shortName(r.ticker)}</span><span style={{ color: C.muted, fontSize: T.caption, marginLeft: 8 }}>{(r.kind || "").replace(/_/g, " ")} · surfaced {fmtD(r.surfaced_at)}</span></span>
+                <span style={{ display: "flex", gap: 12, alignItems: "baseline" }}>
+                  <span style={{ fontSize: T.micro, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: d.c }}>{d.l}</span>
+                  {r.perf_pct != null && <span style={{ fontFamily: C.mono, fontWeight: 700, fontSize: 13, color: r.perf_pct >= 0 ? C.green : C.red }}>{r.perf_pct >= 0 ? "+" : ""}{r.perf_pct}%</span>}
+                </span>
+              </div>
+            ); })}
+          </div>
         </div>
       )}
 
