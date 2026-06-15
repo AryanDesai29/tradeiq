@@ -10,7 +10,7 @@ import { normalizeReview } from "./reviews.js";
 import { THESIS_TYPES, THESIS_FIELD_MAX, thesisComplete, missingThesisFields } from "./thesis.js";
 import { normalizeOpportunities } from "./opportunities.js";
 import { personalLens, lensBlock, pipelineState, scoreOpportunity, lineageSnapshot } from "./pipeline.js";
-import { hashTopic } from "./council.js";
+import { hashTopic, buildCouncilContext, normalizeSession } from "./council.js";
 import { defaultTasks, mergeTasks, queuedTasks, tasksFromCouncil, applyFindings, normalizeBrief, researchDone } from "./analyst.js";
 import { buildSources, sourcesBlock, isReadable } from "./sources.js";
 import { normalizeFacts, hasFacts, factsBlock } from "./facts.js";
@@ -18,6 +18,8 @@ import { normalizeDigest, digestBlock, latestDigest, digestCount } from "./filin
 import { trackFiling } from "./telemetry.js";
 import OpportunityPipeline from "./Pipeline.jsx";
 import ResearchWorkspace from "./ResearchWorkspace.jsx";
+import Autopilot from "./Autopilot.jsx";
+import { defaultConfig as apConfig, decideEntries, decideExit, equityOf, accountStats, backtestPosition, pnlOf as apPnl, rMultipleOf as apR } from "./autopilot.js";
 import Council from "./Council.jsx";
 import MissionControl from "./MissionControl.jsx";
 import { createClient } from "@supabase/supabase-js";
@@ -266,6 +268,15 @@ function TradeIQ({ session }) {
   const [priceStatus,setPriceStatus]=useState("loading");
   const [lastUpdated,setLastUpdated]=useState(null);
   const chatEnd = useRef(null);
+  // Paper Autopilot (demo account — virtual money, real prices)
+  const [paperAcct,setPaperAcct]=useState(null);
+  const [paperTrades,setPaperTrades]=useState([]);
+  const [apBusy,setApBusy]=useState(false);
+  const [apMsg,setApMsg]=useState(null);
+  const [apLive,setApLive]=useState(()=>{ try{return localStorage.getItem(`tradeiq_ap_live_${userId}`)==="1";}catch{return false;} }); // continuous live loop on/off
+  const [apFeed,setApFeed]=useState([]); // live activity narration (newest first)
+  const apPhaseRef=useRef({phase:"scan",ticker:null,verdict:null,cooldownUntil:0});
+  const apTickRef=useRef(null);
 
   // ── Live price fetch ──
   const fetchPrices = async() => {
@@ -370,6 +381,13 @@ function TradeIQ({ session }) {
     try {
       const { data:op } = await db.from("tradeiq_opportunities").select("*").order("generated_at",{ascending:false}).limit(60);
       if (op && op.length) setOpportunities(op);
+    } catch {}
+    // Paper Autopilot account + trades (tables may not exist until migration 0012).
+    try {
+      const { data:pa } = await db.from("tradeiq_paper_account").select("*").eq("user_id",userId).maybeSingle();
+      if (pa) setPaperAcct(pa);
+      const { data:pt } = await db.from("tradeiq_paper_trades").select("*").order("entry_at",{ascending:false});
+      if (pt) setPaperTrades(pt);
     } catch {}
   };
 
@@ -483,7 +501,7 @@ function TradeIQ({ session }) {
   // Ensures the 6-question playbook exists, executes whatever is queued, applies
   // the findings + normalized brief, and advances the pipeline (all tasks done →
   // council_review). Returns the patch so an open workspace can sync its draft.
-  const researchOpportunity=async(o)=>{
+  const researchOpportunity=async(o,opts={})=>{
     if(researchingId)return null; setResearchingId(o.id);
     try{
       const now=new Date().toISOString();
@@ -530,7 +548,7 @@ function TradeIQ({ session }) {
       setOpportunities(p=>p.map(x=>x.id===o.id?{...x,...patch}:x));
       try{ if(typeof o.id!=="string") await db.from("tradeiq_opportunities").update(patch).eq("id",o.id); }catch{}
       return patch;
-    }catch(e){ alert(e.message); return null; }
+    }catch(e){ if(!opts.silent) alert(e.message); return null; }
     finally{ setResearchingId(null); }
   };
 
@@ -662,6 +680,234 @@ function TradeIQ({ session }) {
     setOppStatus(o.id,"logged"); setShowAddT(true); setTab("journal");
   };
 
+  // ── PAPER AUTOPILOT (demo account — virtual money, REAL prices, council-gated) ──
+  const apPriceOf=(t)=>liveData[t]?.price ?? null;
+  const _apRound=(n)=>Math.round((Number(n)||0)*100)/100;
+  const ensurePaperAccount=async()=>{
+    if(paperAcct) return paperAcct;
+    try{
+      const {data:ex}=await db.from("tradeiq_paper_account").select("*").eq("user_id",userId).maybeSingle();
+      if(ex){ setPaperAcct(ex); return ex; }
+      const {data}=await db.from("tradeiq_paper_account").insert({user_id:userId,currency:"INR",starting_cash:100000,cash:100000,started_at:new Date().toISOString()}).select().single();
+      if(data){ setPaperAcct(data); return data; }
+    }catch(e){}
+    const opt={user_id:userId,currency:"INR",starting_cash:100000,cash:100000,started_at:new Date().toISOString()};
+    setPaperAcct(opt); return opt;
+  };
+  // Core run: close hit stops/targets on the live price, then open council-approved
+  // ideas (sized by the 2%-risk rule). `opps` lets the council path pass an augmented list.
+  const _autopilotCore=async(opps,acct)=>{
+    const cfg=apConfig(); const now=new Date().toISOString(); const log=[];
+    let trades=[...paperTrades]; let cash=Number(acct.cash)||0;
+    for(const p of trades.filter(t=>t.status==="open")){
+      const px=apPriceOf(p.ticker); if(px==null) continue;
+      const ex=decideExit(p,{price:px},now);
+      if(ex){
+        const ct={...p,status:"closed",...ex}; ct.pnl=apPnl(ct); ct.r_multiple=apR(ct);
+        cash+=Number(ex.exit_price)*Number(p.qty);
+        try{ await db.from("tradeiq_paper_trades").update({status:"closed",exit_price:ex.exit_price,exit_at:ex.exit_at,exit_reason:ex.exit_reason,pnl:ct.pnl,r_multiple:ct.r_multiple}).eq("id",p.id);}catch(e){}
+        trades=trades.map(t=>t.id===p.id?ct:t);
+        log.push(`Closed ${shortName(p.ticker)} · ${ex.exit_reason} ${ct.r_multiple>=0?"+":""}${ct.r_multiple}R`);
+      }
+    }
+    const held=new Set(trades.filter(t=>t.status==="open").map(t=>t.ticker));
+    const equity=equityOf({cash},trades.filter(t=>t.status==="open"),apPriceOf);
+    const opens=decideEntries({opportunities:opps,held,account:{cash},equity,priceOf:apPriceOf,scoreOf:(o)=>scoreOpportunity(o,personalLens(journal)).composite,cfg,now});
+    for(const o of opens){
+      try{ const {data}=await db.from("tradeiq_paper_trades").insert({user_id:userId,...o}).select().single();
+        if(data){ trades=[data,...trades]; cash-=Number(o.entry_price)*Number(o.qty); log.push(`Bought ${o.qty} ${shortName(o.ticker)} · council ${o.council_verdict} ${o.council_confidence}%`); } }catch(e){}
+    }
+    cash=_apRound(cash);
+    try{ await db.from("tradeiq_paper_account").update({cash,updated_at:new Date().toISOString()}).eq("user_id",userId);}catch(e){}
+    setPaperAcct({...acct,cash}); setPaperTrades(trades);
+    return log;
+  };
+  const runAutopilot=async()=>{
+    if(apBusy)return; setApBusy(true); setApMsg(null);
+    try{ const acct=await ensurePaperAccount(); const log=await _autopilotCore(opportunities,acct);
+      setApMsg(log.length?log.join("\n"):"No stops or targets hit, and no new council-approved ideas to buy right now."); }
+    catch(e){ setApMsg("Autopilot error: "+e.message); }
+    setApBusy(false);
+  };
+  // Convene the quick council on one idea and persist the verdict via the normal pipeline.
+  const _councilVerdictFor=async(o)=>{
+    const topic={type:"opportunity",ticker:o.ticker,title:`${o.ticker} ${o.thesis_type||"opportunity"}: ${(o.reality_hypothesis||o.bull_case||"review this idea").slice(0,140)}`};
+    let token=null; if(SUPABASE_READY){try{const {data}=await db.auth.getSession();token=data.session?.access_token??null;}catch{}}
+    const ctx=buildCouncilContext({holdings,journal,reviews:Object.values(reviews),opportunities,watchlist:[...US_WATCHLIST,...INDIA_WATCHLIST],topic,compact:true});
+    const res=await fetch("/api/council",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:`Bearer ${token}`}:{})},body:JSON.stringify({mode:"convene",council:"quick",topic,context:ctx})});
+    const data=await res.json(); if(data.error) throw new Error(data.error);
+    const sess=normalizeSession(data.session,"quick"); if(!sess?.verdict) return null;
+    handleCouncilVerdict(topic,sess);
+    return {verdict:sess.verdict.recommendation,confidence:sess.verdict.confidence,hash:hashTopic({mode:sess.mode||"quick",type:topic.type,ticker:topic.ticker,title:topic.title})};
+  };
+  const runAutopilotWithCouncil=async()=>{
+    if(apBusy)return;
+    if(typeof window!=="undefined"&&!window.confirm("Convene the Council on up to 3 top ideas (uses AI credits), then trade any approvals?"))return;
+    setApBusy(true); setApMsg("Convening the council on top ideas…");
+    try{
+      const acct=await ensurePaperAccount(); const lens=personalLens(journal); const buys=apConfig().buyVerdicts;
+      const held=new Set(paperTrades.filter(t=>t.status==="open").map(t=>t.ticker));
+      const cands=opportunities.filter(o=>o&&apPriceOf(o.ticker)!=null&&!held.has(o.ticker)&&!buys.includes(o.council_verdict))
+        .sort((a,b)=>scoreOpportunity(b,lens).composite-scoreOpportunity(a,lens).composite).slice(0,3);
+      const aug=[...opportunities];
+      for(const o of cands){ try{ const v=await _councilVerdictFor(o); if(v){ const i=aug.findIndex(x=>x.id===o.id); if(i>=0) aug[i]={...aug[i],council_verdict:v.verdict,council_confidence:v.confidence,council_session_hash:v.hash}; } }catch(e){} }
+      setApMsg("Council done — executing approvals…");
+      const log=await _autopilotCore(aug,acct);
+      setApMsg((log.length?log.join("\n"):"Council finished; no idea cleared the buy gate, so nothing was bought.")+`\n(Convened ${cands.length} idea${cands.length===1?"":"s"}.)`);
+    }catch(e){ setApMsg("Council run error: "+e.message); }
+    setApBusy(false);
+  };
+  // Honest "started last week": replay council-approved ideas over the last 7 trading
+  // days on REAL historical prices (equal-weighted off the sim capital). Backtest, labeled.
+  const seedBacktest=async()=>{
+    if(apBusy)return; setApBusy(true); setApMsg("Backtesting the last week on real historical prices…");
+    try{
+      const acct=await ensurePaperAccount(); const buys=apConfig().buyVerdicts; const lens=personalLens(journal);
+      const ready=opportunities.filter(o=>buys.includes(o.council_verdict)&&(o.council_confidence??0)>=apConfig().minCouncilConfidence)
+        .sort((a,b)=>scoreOpportunity(b,lens).composite-scoreOpportunity(a,lens).composite).slice(0,apConfig().maxPositions);
+      if(!ready.length){ setApMsg("Nothing to backtest yet — no council-approved ideas. Use “Convene council + trade” first."); setApBusy(false); return; }
+      const perTrade=(Number(acct.starting_cash)||100000)/ready.length; const cfg={...apConfig(),startingCash:perTrade};
+      let token=null; if(SUPABASE_READY){try{const {data}=await db.auth.getSession();token=data.session?.access_token??null;}catch{}}
+      const recs=[]; let earliest=null;
+      for(const o of ready){
+        try{
+          const res=await fetch(`/api/chart?ticker=${encodeURIComponent(o.ticker)}`,{headers:token?{Authorization:`Bearer ${token}`}:undefined});
+          const data=await res.json();
+          const candles=(data.candles||[]).map(c=>({date:c.t,close:c.c,high:c.h,low:c.l})).filter(c=>c.close!=null);
+          const last7=candles.slice(-7); if(last7.length<2) continue;
+          const t=backtestPosition(o,last7,cfg); if(!t) continue;
+          let rec=t; try{ const {data:ins}=await db.from("tradeiq_paper_trades").insert({user_id:userId,...t}).select().single(); if(ins) rec=ins; }catch(e){}
+          recs.push(rec); if(!earliest||String(rec.entry_at)<String(earliest)) earliest=rec.entry_at;
+        }catch(e){}
+      }
+      if(!recs.length){ setApMsg("Couldn't fetch enough history to backtest these ideas."); setApBusy(false); return; }
+      let cash=Number(acct.starting_cash)||100000;
+      for(const r of recs){ if(r.status==="closed") cash+=Number(r.pnl)||0; else cash-=Number(r.entry_price)*Number(r.qty); }
+      cash=_apRound(cash); const patch={cash,started_at:earliest||acct.started_at};
+      try{ await db.from("tradeiq_paper_account").update({...patch,updated_at:new Date().toISOString()}).eq("user_id",userId);}catch(e){}
+      setPaperAcct({...acct,...patch}); setPaperTrades(p=>[...recs,...p]);
+      const closed=recs.filter(r=>r.status==="closed"); const wins=closed.filter(r=>(Number(r.pnl)||0)>0).length;
+      setApMsg(`Seeded ${recs.length} simulated trades over the last week on real prices — ${closed.length} closed (${wins} winner${wins===1?"":"s"}), ${recs.length-closed.length} still open. Backtest, clearly marked.`);
+    }catch(e){ setApMsg("Backtest error: "+e.message); }
+    setApBusy(false);
+  };
+  const resetDemo=async()=>{
+    if(apBusy)return;
+    if(typeof window!=="undefined"&&!window.confirm("Reset the demo account? Deletes all simulated trades and restores ₹1,00,000."))return;
+    setApBusy(true);
+    try{
+      await db.from("tradeiq_paper_trades").delete().eq("user_id",userId);
+      const started=new Date().toISOString();
+      await db.from("tradeiq_paper_account").update({cash:100000,starting_cash:100000,started_at:started,updated_at:started}).eq("user_id",userId);
+      setPaperTrades([]); setPaperAcct(p=>p?{...p,cash:100000,starting_cash:100000,started_at:started}:p);
+      setApMsg("Demo reset to ₹1,00,000.");
+    }catch(e){ setApMsg("Reset error: "+e.message); }
+    setApBusy(false);
+  };
+  // ── LIVE AUTOPILOT LOOP — runs constantly while "Go Live" is on, narrating
+  // every step. One phase advances per tick so React state from generate/
+  // research/council settles between phases, and each tick reads fresh closures
+  // (apTickRef.current is reassigned every render). Idea-sourcing is spaced out
+  // (cooldown) to respect the engines' rate limits; exits are managed every tick.
+  const pushFeed=(phase,text)=>setApFeed(f=>[{at:Date.now(),phase,text},...f].slice(0,90));
+  const _apExits=async(acct)=>{
+    let trades=[...paperTrades]; let cash=Number(acct.cash)||0; let changed=false; const now=new Date().toISOString();
+    for(const p of trades.filter(t=>t.status==="open")){
+      const px=apPriceOf(p.ticker); if(px==null) continue;
+      const ex=decideExit(p,{price:px},now);
+      if(ex){ const ct={...p,status:"closed",...ex}; ct.pnl=apPnl(ct); ct.r_multiple=apR(ct); cash+=Number(ex.exit_price)*Number(p.qty);
+        try{await db.from("tradeiq_paper_trades").update({status:"closed",exit_price:ex.exit_price,exit_at:ex.exit_at,exit_reason:ex.exit_reason,pnl:ct.pnl,r_multiple:ct.r_multiple}).eq("id",p.id);}catch(e){}
+        trades=trades.map(t=>t.id===p.id?ct:t); changed=true;
+        pushFeed("exit",`${ex.exit_reason==="target"?"🎯":"🛑"} Closed ${shortName(p.ticker)} at ${ex.exit_reason} — ${ct.r_multiple>=0?"+":""}${ct.r_multiple}R (${symbolFor(p.currency)}${ct.pnl>=0?"+":""}${ct.pnl}).`); }
+    }
+    if(changed){ cash=_apRound(cash); try{await db.from("tradeiq_paper_account").update({cash,updated_at:new Date().toISOString()}).eq("user_id",userId);}catch(e){} setPaperAcct({...acct,cash}); setPaperTrades(trades); return {...acct,cash}; }
+    return acct;
+  };
+  const _apOpenOne=async(opp,acct)=>{
+    const cfg=apConfig();
+    const held=new Set(paperTrades.filter(t=>t.status==="open").map(t=>t.ticker));
+    const equity=equityOf({cash:acct.cash},paperTrades.filter(t=>t.status==="open"),apPriceOf);
+    const opens=decideEntries({opportunities:[opp],held,account:{cash:acct.cash},equity,priceOf:apPriceOf,scoreOf:()=>1,cfg,now:new Date().toISOString()});
+    if(!opens.length){ pushFeed("decision",`No position opened in ${shortName(opp.ticker)} — gate/cash/sizing not met.`); return acct; }
+    const o=opens[0];
+    try{ const {data}=await db.from("tradeiq_paper_trades").insert({user_id:userId,...o}).select().single();
+      const rec=data||{...o,id:`l_${Date.now()}`}; setPaperTrades(p=>[rec,...p]);
+      const cash=_apRound((Number(acct.cash)||0)-Number(o.entry_price)*Number(o.qty));
+      try{await db.from("tradeiq_paper_account").update({cash,updated_at:new Date().toISOString()}).eq("user_id",userId);}catch(e){}
+      setPaperAcct({...acct,cash});
+      pushFeed("entry",`🟢 Bought ${o.qty} ${shortName(opp.ticker)} @ ${symbolFor(o.currency)}${o.entry_price} — stop ${symbolFor(o.currency)}${o.stop}, target ${symbolFor(o.currency)}${o.target} (1:2 R:R).`);
+      return {...acct,cash};
+    }catch(e){ pushFeed("error",`Couldn't record ${shortName(opp.ticker)} buy: ${e.message}`); return acct; }
+  };
+  apTickRef.current=async()=>{
+    const cfg=apConfig(); const buys=cfg.buyVerdicts; const lens=personalLens(journal); const nowMs=Date.now();
+    let acct=paperAcct||await ensurePaperAccount();
+    acct=await _apExits(acct);                                   // manage exits EVERY tick
+    const open=paperTrades.filter(t=>t.status==="open");
+    const held=new Set(open.map(t=>t.ticker));
+    const ph=apPhaseRef.current;
+    if(open.length>=cfg.maxPositions){ apPhaseRef.current={...ph,phase:"scan",cooldownUntil:nowMs+5*60000}; return; }
+    if(nowMs<ph.cooldownUntil) return;                           // quiet "watching" window between ideas
+    switch(ph.phase){
+      case "pick":{
+        const cands=opportunities.filter(o=>apPriceOf(o.ticker)!=null&&!held.has(o.ticker)).sort((a,b)=>scoreOpportunity(b,lens).composite-scoreOpportunity(a,lens).composite);
+        const approved=cands.find(o=>buys.includes(o.council_verdict)&&(o.council_confidence??0)>=cfg.minCouncilConfidence);
+        if(approved){ pushFeed("pick",`✅ ${shortName(approved.ticker)} is already council-approved (${approved.council_verdict} ${approved.council_confidence}%). Executing.`); apPhaseRef.current={phase:"execute",ticker:approved.ticker,verdict:null,cooldownUntil:0}; break; }
+        const pick=cands.find(o=>!buys.includes(o.council_verdict));
+        if(!pick){ pushFeed("wait","🫷 No fresh candidate right now — pausing idea-search ~8 min (respecting rate limits)."); apPhaseRef.current={phase:"scan",ticker:null,verdict:null,cooldownUntil:nowMs+8*60000}; break; }
+        pushFeed("pick",`🎯 Top candidate: ${shortName(pick.ticker)} — ${pick.thesis_type||"thesis"}, model conf ${pick.confidence??"?"}%. Sending to research.`);
+        apPhaseRef.current={phase:"research",ticker:pick.ticker,verdict:null,cooldownUntil:0}; break;
+      }
+      case "research":{
+        const opp=opportunities.find(o=>o.ticker===ph.ticker); if(!opp){ apPhaseRef.current={phase:"scan",ticker:null,verdict:null,cooldownUntil:0}; break; }
+        if(opp.research_brief){ pushFeed("research",`📚 ${shortName(opp.ticker)} already researched — convening council.`); apPhaseRef.current={phase:"council",ticker:ph.ticker,verdict:null,cooldownUntil:0}; break; }
+        pushFeed("research",`📚 Researching ${shortName(opp.ticker)} — news, SEC filings (US), thesis tasks…`);
+        try{ await researchOpportunity(opp,{silent:true}); pushFeed("research",`📑 Research brief ready for ${shortName(opp.ticker)}.`);}catch(e){ pushFeed("error",`Research skipped for ${shortName(opp.ticker)} (${e.message||"rate-limited"}).`); }
+        apPhaseRef.current={phase:"council",ticker:ph.ticker,verdict:null,cooldownUntil:0}; break;
+      }
+      case "council":{
+        const opp=opportunities.find(o=>o.ticker===ph.ticker); if(!opp){ apPhaseRef.current={phase:"scan",ticker:null,verdict:null,cooldownUntil:0}; break; }
+        pushFeed("council",`🏛️ Council convening on ${shortName(opp.ticker)} (quick panel)…`);
+        try{ const v=await _councilVerdictFor(opp);
+          if(v){ pushFeed("council",`🏛️ Verdict on ${shortName(opp.ticker)}: ${v.verdict} @ ${v.confidence}%.`); apPhaseRef.current={phase:"execute",ticker:ph.ticker,verdict:v,cooldownUntil:0}; }
+          else { pushFeed("council",`No clear verdict on ${shortName(opp.ticker)} — moving on.`); apPhaseRef.current={phase:"scan",ticker:null,verdict:null,cooldownUntil:nowMs+8*60000}; } }
+        catch(e){ pushFeed("error","🏛️ Council rate-limited — holding; will retry next cycle."); }
+        break;
+      }
+      case "execute":{
+        const opp=opportunities.find(o=>o.ticker===ph.ticker);
+        const v=ph.verdict||{verdict:opp?.council_verdict,confidence:opp?.council_confidence};
+        if(opp&&buys.includes(v.verdict)&&(v.confidence??0)>=cfg.minCouncilConfidence){
+          pushFeed("decision",`✅ ${shortName(opp.ticker)} cleared the buy gate (${v.verdict} ${v.confidence}%). Sizing at ≤2% risk…`);
+          acct=await _apOpenOne({...opp,council_verdict:v.verdict,council_confidence:v.confidence,council_session_hash:v.hash||opp.council_session_hash},acct);
+        } else pushFeed("decision",`⏭️ ${shortName(ph.ticker||"idea")} didn't clear the buy gate (need Buy/Strong Buy ≥ ${cfg.minCouncilConfidence}%). Capital preserved.`);
+        apPhaseRef.current={phase:"scan",ticker:null,verdict:null,cooldownUntil:nowMs+8*60000}; break;
+      }
+      case "scan": default:{
+        const liveOpps=opportunities.filter(o=>apPriceOf(o.ticker)!=null);
+        const fresh=liveOpps.filter(o=>!held.has(o.ticker));
+        pushFeed("scan",`🔍 Scanning ${liveOpps.length} live names; ${open.length} position${open.length===1?"":"s"} open.`);
+        if(fresh.length<2){ pushFeed("discover","💡 Thin board — asking the Discovery engine for fresh theses…"); try{ await generateOpportunities({auto:true}); }catch(e){} }
+        apPhaseRef.current={phase:"pick",ticker:null,verdict:null,cooldownUntil:0}; break;
+      }
+    }
+  };
+  useEffect(()=>{
+    if(!apLive) return;
+    let cancelled=false,running=false;
+    const run=async()=>{ if(running||cancelled)return; running=true; try{ await apTickRef.current?.(); }catch(e){} running=false; };
+    run();
+    const iv=setInterval(run,25000);
+    return ()=>{ cancelled=true; clearInterval(iv); };
+  },[apLive]); // eslint-disable-line react-hooks/exhaustive-deps
+  const toggleLive=async()=>{
+    const next=!apLive;
+    try{ localStorage.setItem(`tradeiq_ap_live_${userId}`,next?"1":"0"); }catch{}
+    if(next){ await ensurePaperAccount(); apPhaseRef.current={phase:"scan",ticker:null,verdict:null,cooldownUntil:0}; pushFeed("live","▶ Autopilot is LIVE — monitoring prices every ~25s and sourcing ideas through Discovery → Research → Council → execution."); }
+    else pushFeed("live","⏸ Autopilot paused. Open positions stay; nothing new will be opened.");
+    setApLive(next);
+  };
+
   // ── AI — calls /api/chat (Groq key stays secret on Vercel) ──
   const systemPrompt=useCallback(()=>{
     const liveOf=(t)=>liveData[t]?.price;
@@ -738,7 +984,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
 
   const syncLabel={idle:"",syncing:"⟳ Syncing",synced:"✓ Synced",error:"⚠ Error"};
   const syncColor={idle:C.muted,syncing:C.gold,synced:C.green,error:C.red};
-  const TABS=[{id:"dash",l:"🎛️ Mission Control"},{id:"council",l:"🏛️ Council"},{id:"perf",l:"🧪 Alpha Lab"},{id:"opps",l:"💡 Opportunities"},{id:"ai",l:"🤖 AI Advisor"},{id:"scanner",l:"🔍 Scanner"},{id:"chart",l:"📈 Charts"},{id:"strategies",l:"⚡ Strategies"},{id:"journal",l:"📓 Journal"},{id:"learn",l:"📚 Learn"}];
+  const TABS=[{id:"dash",l:"🎛️ Mission Control"},{id:"autopilot",l:"🚀 Autopilot"},{id:"council",l:"🏛️ Council"},{id:"perf",l:"🧪 Alpha Lab"},{id:"opps",l:"💡 Opportunities"},{id:"ai",l:"🤖 AI Advisor"},{id:"scanner",l:"🔍 Scanner"},{id:"chart",l:"📈 Charts"},{id:"strategies",l:"⚡ Strategies"},{id:"journal",l:"📓 Journal"},{id:"learn",l:"📚 Learn"}];
 
   // ── OPPORTUNITY PIPELINE TAB — the analyst desk board (Pipeline.jsx) ──
   const Opportunities=()=>(
@@ -1061,7 +1307,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
         {TABS.map(t=>(<button key={t.id} className="tiq-btn tiq-tab" onClick={()=>setTab(t.id)} aria-current={tab===t.id?"page":undefined} style={{padding:"11px 13px",fontSize:12,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",fontFamily:C.display,background:tab===t.id?C.accent+"12":"none",border:"none",borderRadius:"8px 8px 0 0",borderBottom:tab===t.id?`2px solid ${C.accent}`:"2px solid transparent",color:tab===t.id?C.accent:C.muted,whiteSpace:"nowrap"}}>{t.l}</button>))}
       </div>
       <div key={tab} className="tab-in tiq-main" style={{padding:18,maxWidth:1240,margin:"0 auto"}}>
-        {tab==="council"&&<div className="tiq-bleed tiq-fit-full" style={{minHeight:480}}><Council theme={C} db={db} supabaseReady={SUPABASE_READY} userId={userId} holdings={holdings} journal={journal} reviews={Object.values(reviews)} opportunities={opportunities} watchlist={[...US_WATCHLIST,...INDIA_WATCHLIST]} request={councilRequest} onRequestConsumed={()=>setCouncilRequest(null)} onVerdict={handleCouncilVerdict}/></div>}{tab==="perf"&&<Performance journal={journal} reviews={Object.values(reviews)} opportunities={opportunities} userId={userId} theme={C}/>}{tab==="opps"&&Opportunities()}{tab==="dash"&&Dashboard()}{tab==="ai"&&AIChat()}{tab==="scanner"&&Scanner()}{tab==="chart"&&<div className="tiq-bleed tiq-fit-full"><ChartView ticker={chartTicker} market={marketTab} onClose={null}/></div>}{tab==="strategies"&&StrategiesTab()}{tab==="journal"&&JournalTab()}{tab==="learn"&&Learn()}
+        {tab==="council"&&<div className="tiq-bleed tiq-fit-full" style={{minHeight:480}}><Council theme={C} db={db} supabaseReady={SUPABASE_READY} userId={userId} holdings={holdings} journal={journal} reviews={Object.values(reviews)} opportunities={opportunities} watchlist={[...US_WATCHLIST,...INDIA_WATCHLIST]} request={councilRequest} onRequestConsumed={()=>setCouncilRequest(null)} onVerdict={handleCouncilVerdict}/></div>}{tab==="perf"&&<Performance journal={journal} reviews={Object.values(reviews)} opportunities={opportunities} userId={userId} theme={C}/>}{tab==="opps"&&Opportunities()}{tab==="dash"&&Dashboard()}{tab==="autopilot"&&<Autopilot account={paperAcct} trades={paperTrades} stats={accountStats(paperAcct||{cash:0,starting_cash:100000},paperTrades,apPriceOf)} busy={apBusy} msg={apMsg} priceOf={apPriceOf} onRun={runAutopilot} onCouncilRun={runAutopilotWithCouncil} onSeed={seedBacktest} onReset={resetDemo} live={apLive} feed={apFeed} onToggleLive={toggleLive} councilReadyCount={opportunities.filter(o=>(o.council_verdict==="Strong Buy"||o.council_verdict==="Buy")&&(o.council_confidence??0)>=60).length}/>}{tab==="ai"&&AIChat()}{tab==="scanner"&&Scanner()}{tab==="chart"&&<div className="tiq-bleed tiq-fit-full"><ChartView ticker={chartTicker} market={marketTab} onClose={null}/></div>}{tab==="strategies"&&StrategiesTab()}{tab==="journal"&&JournalTab()}{tab==="learn"&&Learn()}
       </div>
       {researchOpp&&<ResearchWorkspace opp={researchOpp} theme={C} onSave={saveResearch} onCreateTrade={(o)=>{critiqueAndLog(o);setResearchOpp(null);}} onClose={()=>setResearchOpp(null)} onRunResearch={researchOpportunity} researching={researchingId===researchOpp.id} onIngestFiling={ingestFiling} ingestingAcc={ingestingAcc} onFilingEvent={logFiling}/>}
 
