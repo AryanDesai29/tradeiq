@@ -275,6 +275,7 @@ function TradeIQ({ session }) {
   const [apMsg,setApMsg]=useState(null);
   const [apLive,setApLive]=useState(()=>{ try{return localStorage.getItem(`tradeiq_ap_live_${userId}`)==="1";}catch{return false;} }); // continuous live loop on/off
   const [apFeed,setApFeed]=useState([]); // live activity narration (newest first)
+  const [apIdeas,setApIdeas]=useState([]); // Nova's OWN idea pool (not the shared board)
   const apPhaseRef=useRef({phase:"scan",ticker:null,verdict:null,cooldownUntil:0});
   const apTickRef=useRef(null);
 
@@ -839,56 +840,79 @@ function TradeIQ({ session }) {
       return {...acct,cash};
     }catch(e){ pushFeed("error",`Couldn't record ${shortName(opp.ticker)} buy: ${e.message}`); return acct; }
   };
+  // ── NOVA — the autopilot's autonomous PM: her OWN ideas, council, decisions ──
+  const AGENT="Nova";
+  // Nova forms her OWN theses across the live universe (NOT the shared board).
+  const _apGenerateIdeas=async()=>{
+    const uni=[...US_WATCHLIST,...INDIA_WATCHLIST].filter(w=>w.price!=null)
+      .map(w=>({ticker:w.ticker,name:w.name,currency:w.currency,price:w.price,chg:w.chg,rsi:w.rsi,ema20:w.ema20,ema200:w.ema200}));
+    if(!uni.length) return [];
+    let token=null; if(SUPABASE_READY){try{const {data}=await db.auth.getSession();token=data.session?.access_token??null;}catch{}}
+    const res=await fetch("/api/opportunities",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:`Bearer ${token}`}:{})},body:JSON.stringify({stocks:uni,market:marketTab,count:6,lens:lensBlock(personalLens(journal))})});
+    const data=await res.json(); if(data.error) throw new Error(data.error);
+    const known=new Set(uni.map(w=>w.ticker)); const byT=Object.fromEntries(uni.map(w=>[w.ticker,w]));
+    return normalizeOpportunities(data.opportunities,known,8).map((o,i)=>({...o,id:`nova_${o.ticker}_${i}`,currency:byT[o.ticker]?.currency,price_at_gen:byT[o.ticker]?.price??null,_judged:false}));
+  };
+  // Nova convenes her own quick council on her own idea (the idea is the context).
+  const _apCouncil=async(idea)=>{
+    const topic={type:"opportunity",ticker:idea.ticker,title:`${idea.ticker} ${idea.thesis_type||"opportunity"}: ${(idea.reality_hypothesis||idea.bull_case||"review this idea").slice(0,140)}`};
+    let token=null; if(SUPABASE_READY){try{const {data}=await db.auth.getSession();token=data.session?.access_token??null;}catch{}}
+    const ctx=buildCouncilContext({holdings,journal,reviews:Object.values(reviews),opportunities:[idea],watchlist:[...US_WATCHLIST,...INDIA_WATCHLIST],topic,compact:true});
+    const res=await fetch("/api/council",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:`Bearer ${token}`}:{})},body:JSON.stringify({mode:"convene",council:"quick",topic,context:ctx})});
+    const data=await res.json(); if(data.error) throw new Error(data.error);
+    const sess=normalizeSession(data.session,"quick"); if(!sess?.verdict) return null;
+    return {verdict:sess.verdict.recommendation,confidence:sess.verdict.confidence,hash:hashTopic({mode:sess.mode||"quick",type:topic.type,ticker:topic.ticker,title:topic.title})};
+  };
   apTickRef.current=async()=>{
-    const cfg=apConfig(); const buys=cfg.buyVerdicts; const lens=personalLens(journal); const nowMs=Date.now();
+    const cfg=apConfig(); const buys=cfg.buyVerdicts; const nowMs=Date.now(); const COOL=10*60000; // ~6 council convenes/hr cap
     let acct=paperAcct||await ensurePaperAccount();
     acct=await _apExits(acct);                                   // manage exits EVERY tick
     const open=paperTrades.filter(t=>t.status==="open");
     const held=new Set(open.map(t=>t.ticker));
     const ph=apPhaseRef.current;
     if(open.length>=cfg.maxPositions){ apPhaseRef.current={...ph,phase:"scan",cooldownUntil:nowMs+5*60000}; return; }
-    if(nowMs<ph.cooldownUntil) return;                           // quiet "watching" window between ideas
+    if(nowMs<ph.cooldownUntil) return;                           // quiet window between ideas (rate limits)
     switch(ph.phase){
       case "pick":{
-        const cands=opportunities.filter(o=>apPriceOf(o.ticker)!=null&&!held.has(o.ticker)).sort((a,b)=>scoreOpportunity(b,lens).composite-scoreOpportunity(a,lens).composite);
-        const approved=cands.find(o=>buys.includes(o.council_verdict)&&(o.council_confidence??0)>=cfg.minCouncilConfidence);
-        if(approved){ pushFeed("pick",`✅ ${shortName(approved.ticker)} is already council-approved (${approved.council_verdict} ${approved.council_confidence}%). Executing.`); apPhaseRef.current={phase:"execute",ticker:approved.ticker,verdict:null,cooldownUntil:0}; break; }
-        const pick=cands.find(o=>!buys.includes(o.council_verdict));
-        if(!pick){ pushFeed("wait","🫷 No fresh candidate right now — pausing idea-search ~8 min (respecting rate limits)."); apPhaseRef.current={phase:"scan",ticker:null,verdict:null,cooldownUntil:nowMs+8*60000}; break; }
-        pushFeed("pick",`🎯 Top candidate: ${shortName(pick.ticker)} — ${pick.thesis_type||"thesis"}, model conf ${pick.confidence??"?"}%. Sending to research.`);
-        apPhaseRef.current={phase:"research",ticker:pick.ticker,verdict:null,cooldownUntil:0}; break;
-      }
-      case "research":{
-        const opp=opportunities.find(o=>o.ticker===ph.ticker); if(!opp){ apPhaseRef.current={phase:"scan",ticker:null,verdict:null,cooldownUntil:0}; break; }
-        if(opp.research_brief){ pushFeed("research",`📚 ${shortName(opp.ticker)} already researched — convening council.`); apPhaseRef.current={phase:"council",ticker:ph.ticker,verdict:null,cooldownUntil:0}; break; }
-        pushFeed("research",`📚 Researching ${shortName(opp.ticker)} — news, SEC filings (US), thesis tasks…`);
-        try{ await researchOpportunity(opp,{silent:true}); pushFeed("research",`📑 Research brief ready for ${shortName(opp.ticker)}.`);}catch(e){ pushFeed("error",`Research skipped for ${shortName(opp.ticker)} (${e.message||"rate-limited"}).`); }
-        apPhaseRef.current={phase:"council",ticker:ph.ticker,verdict:null,cooldownUntil:0}; break;
+        const mine=apIdeas.filter(o=>apPriceOf(o.ticker)!=null&&!held.has(o.ticker));
+        const approved=mine.find(o=>buys.includes(o.council_verdict)&&(o.council_confidence??0)>=cfg.minCouncilConfidence);
+        if(approved){ apPhaseRef.current={phase:"execute",ticker:approved.ticker,verdict:null,cooldownUntil:0}; break; }
+        const pick=mine.find(o=>!o._judged);
+        if(!pick){ apPhaseRef.current={phase:"scan",ticker:null,verdict:null,cooldownUntil:0}; break; }
+        pushFeed("pick",`🎯 ${AGENT}: My next idea is ${shortName(pick.ticker)} — a ${pick.thesis_type||"setup"} thesis, my conviction ${pick.confidence??"?"}%.${pick.reality_hypothesis?` My read: ${pick.reality_hypothesis}`:""}`);
+        apPhaseRef.current={phase:"council",ticker:pick.ticker,verdict:null,cooldownUntil:0}; break;
       }
       case "council":{
-        const opp=opportunities.find(o=>o.ticker===ph.ticker); if(!opp){ apPhaseRef.current={phase:"scan",ticker:null,verdict:null,cooldownUntil:0}; break; }
-        pushFeed("council",`🏛️ Council convening on ${shortName(opp.ticker)} (quick panel)…`);
-        try{ const v=await _councilVerdictFor(opp);
-          if(v){ pushFeed("council",`🏛️ Verdict on ${shortName(opp.ticker)}: ${v.verdict} @ ${v.confidence}%.`); apPhaseRef.current={phase:"execute",ticker:ph.ticker,verdict:v,cooldownUntil:0}; }
-          else { pushFeed("council",`No clear verdict on ${shortName(opp.ticker)} — moving on.`); apPhaseRef.current={phase:"scan",ticker:null,verdict:null,cooldownUntil:nowMs+8*60000}; } }
-        catch(e){ pushFeed("error","🏛️ Council rate-limited — holding; will retry next cycle."); }
+        const idea=apIdeas.find(o=>o.ticker===ph.ticker); if(!idea){ apPhaseRef.current={phase:"pick",ticker:null,verdict:null,cooldownUntil:0}; break; }
+        pushFeed("council",`🏛️ ${AGENT}: Pressure-testing ${shortName(idea.ticker)} with my council…`);
+        try{ const v=await _apCouncil(idea);
+          setApIdeas(p=>p.map(x=>x.ticker===idea.ticker?{...x,_judged:true,council_verdict:v?.verdict||"Neutral",council_confidence:v?.confidence??null,council_session_hash:v?.hash||null}:x));
+          if(v){ pushFeed("council",`🏛️ ${AGENT}: My council says ${v.verdict} @ ${v.confidence}% on ${shortName(idea.ticker)}.`); apPhaseRef.current={phase:"execute",ticker:idea.ticker,verdict:v,cooldownUntil:0}; }
+          else { pushFeed("council",`${AGENT}: No clear read on ${shortName(idea.ticker)} — I'll skip it.`); apPhaseRef.current={phase:"pick",ticker:null,verdict:null,cooldownUntil:nowMs+COOL}; } }
+        catch(e){ pushFeed("error",`${AGENT}: My council is rate-limited — I'll wait and retry.`); apPhaseRef.current={...ph,cooldownUntil:nowMs+2*60000}; }
         break;
       }
       case "execute":{
-        const opp=opportunities.find(o=>o.ticker===ph.ticker);
-        const v=ph.verdict||{verdict:opp?.council_verdict,confidence:opp?.council_confidence};
-        if(opp&&buys.includes(v.verdict)&&(v.confidence??0)>=cfg.minCouncilConfidence){
-          pushFeed("decision",`✅ ${shortName(opp.ticker)} cleared the buy gate (${v.verdict} ${v.confidence}%). Sizing at ≤2% risk…`);
-          acct=await _apOpenOne({...opp,council_verdict:v.verdict,council_confidence:v.confidence,council_session_hash:v.hash||opp.council_session_hash},acct);
-        } else pushFeed("decision",`⏭️ ${shortName(ph.ticker||"idea")} didn't clear the buy gate (need Buy/Strong Buy ≥ ${cfg.minCouncilConfidence}%). Capital preserved.`);
-        apPhaseRef.current={phase:"scan",ticker:null,verdict:null,cooldownUntil:nowMs+8*60000}; break;
+        const idea=apIdeas.find(o=>o.ticker===ph.ticker);
+        const v=ph.verdict||{verdict:idea?.council_verdict,confidence:idea?.council_confidence};
+        if(idea&&buys.includes(v.verdict)&&(v.confidence??0)>=cfg.minCouncilConfidence){
+          pushFeed("decision",`✅ ${AGENT}: I'm taking ${shortName(idea.ticker)} — my council backs me (${v.verdict} ${v.confidence}%). Sizing at ≤2% risk.`);
+          acct=await _apOpenOne({...idea,council_verdict:v.verdict,council_confidence:v.confidence,council_session_hash:v.hash||idea.council_session_hash},acct);
+        } else pushFeed("decision",`⏭️ ${AGENT}: Passing on ${shortName(ph.ticker||"that idea")} — it didn't clear my buy bar. Capital preserved.`);
+        apPhaseRef.current={phase:"pick",ticker:null,verdict:null,cooldownUntil:nowMs+COOL}; break;
       }
       case "scan": default:{
-        const liveOpps=opportunities.filter(o=>apPriceOf(o.ticker)!=null);
-        const fresh=liveOpps.filter(o=>!held.has(o.ticker));
-        pushFeed("scan",`🔍 Scanning ${liveOpps.length} live names; ${open.length} position${open.length===1?"":"s"} open.`);
-        if(fresh.length<2){ pushFeed("discover","💡 Thin board — asking the Discovery engine for fresh theses…"); try{ await generateOpportunities({auto:true}); }catch(e){} }
-        apPhaseRef.current={phase:"pick",ticker:null,verdict:null,cooldownUntil:0}; break;
+        const mineLeft=apIdeas.filter(o=>apPriceOf(o.ticker)!=null&&!held.has(o.ticker)&&!o._judged);
+        if(mineLeft.length){ apPhaseRef.current={phase:"pick",ticker:null,verdict:null,cooldownUntil:0}; break; }
+        const uniN=[...US_WATCHLIST,...INDIA_WATCHLIST].filter(w=>w.price!=null).length;
+        pushFeed("discover",`💡 ${AGENT}: Forming my own theses across ${uniN} names…`);
+        try{ const ideas=await _apGenerateIdeas();
+          if(!ideas.length){ pushFeed("wait",`${AGENT}: Nothing compelling right now — I'll look again in ~10 min.`); apPhaseRef.current={phase:"scan",ticker:null,verdict:null,cooldownUntil:nowMs+COOL}; break; }
+          setApIdeas(prev=>{ const live=prev.filter(x=>!x._judged); const seen=new Set(live.map(x=>x.ticker)); return [...ideas.filter(i=>!seen.has(i.ticker)),...prev].slice(0,40); });
+          pushFeed("discover",`💡 ${AGENT}: I've formed ${ideas.length} idea${ideas.length===1?"":"s"} — ${ideas.slice(0,4).map(i=>shortName(i.ticker)).join(", ")}${ideas.length>4?"…":""}.`);
+          apPhaseRef.current={phase:"pick",ticker:null,verdict:null,cooldownUntil:0};
+        }catch(e){ pushFeed("error",`${AGENT}: Idea engine rate-limited — retrying in ~10 min.`); apPhaseRef.current={phase:"scan",ticker:null,verdict:null,cooldownUntil:nowMs+COOL}; }
+        break;
       }
     }
   };
@@ -903,8 +927,8 @@ function TradeIQ({ session }) {
   const toggleLive=async()=>{
     const next=!apLive;
     try{ localStorage.setItem(`tradeiq_ap_live_${userId}`,next?"1":"0"); }catch{}
-    if(next){ await ensurePaperAccount(); apPhaseRef.current={phase:"scan",ticker:null,verdict:null,cooldownUntil:0}; pushFeed("live","▶ Autopilot is LIVE — monitoring prices every ~25s and sourcing ideas through Discovery → Research → Council → execution."); }
-    else pushFeed("live","⏸ Autopilot paused. Open positions stay; nothing new will be opened.");
+    if(next){ await ensurePaperAccount(); apPhaseRef.current={phase:"scan",ticker:null,verdict:null,cooldownUntil:0}; pushFeed("live",`▶ ${AGENT} is LIVE. I'll form my own ideas, run them past my council, size at ≤2% risk, and manage my own stops/targets — narrating as I go.`); }
+    else pushFeed("live",`⏸ ${AGENT} paused. My open positions stay; I won't open anything new.`);
     setApLive(next);
   };
 

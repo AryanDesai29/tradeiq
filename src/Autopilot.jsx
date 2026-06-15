@@ -36,14 +36,14 @@ export default function Autopilot({ account, trades = [], stats, busy, msg, pric
     <div style={{ maxWidth: 1100, margin: "0 auto" }}>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 6 }}>
-        <div style={{ fontFamily: C.display, fontWeight: 800, fontSize: 22 }}>🚀 Paper Autopilot</div>
+        <div style={{ fontFamily: C.display, fontWeight: 800, fontSize: 22 }}>🚀 Autopilot · Nova</div>
         <Badge>Paper · Simulation</Badge>
-        <Badge color={C.blue}>Council-gated</Badge>
+        <Badge color={C.blue}>Autonomous agent</Badge>
         {live && <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: T.micro, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.green }}><span className="live-dot" style={{ width: 7, height: 7, borderRadius: "50%", background: C.green, display: "inline-block" }} />LIVE</span>}
         {account?.started_at && <span style={{ fontSize: T.caption, color: C.muted }}>running since {fmtDate(account.started_at)}</span>}
       </div>
       <div style={{ fontSize: T.caption, color: C.muted, marginBottom: 14, maxWidth: 720 }}>
-        A simulated trader that executes the system's own <b style={{ color: C.text }}>council-approved</b> ideas — virtual money, real live prices, the PR-#17 lineage on every fill. It never invents anything: entries use the live price, the “why” is the real council verdict + thesis + R:R math.
+        <b style={{ color: C.text }}>Nova</b> is an autonomous paper PM with her <b style={{ color: C.text }}>own ideas</b>. Flip <b style={{ color: C.green }}>Go Live</b> and she forms her own theses across the live universe, pressure-tests each with her own council, sizes at ≤2% risk, and manages her own stops/targets — narrating every step below. Virtual money, real prices; she never invents numbers — entries use the live price and the “why” is her real council verdict + thesis + R:R math.
       </div>
 
       {/* Stats */}
@@ -89,9 +89,9 @@ export default function Autopilot({ account, trades = [], stats, busy, msg, pric
       {/* Empty / guidance */}
       {!open.length && !closed.length && (
         <div style={{ background: C.s1, border: `1px dashed ${C.border}`, borderRadius: 12, padding: 22, textAlign: "center", color: C.muted, fontSize: T.data }}>
-          {councilReadyCount > 0
-            ? <>The autopilot has <b style={{ color: C.text }}>{councilReadyCount}</b> council-approved idea{councilReadyCount > 1 ? "s" : ""} to act on. Hit <b style={{ color: C.accent }}>Run now</b> or <b style={{ color: C.blue }}>Seed last week</b>.</>
-            : <>No council-approved ideas yet — the autopilot only trades what the Council has cleared. Use <b style={{ color: C.gold }}>Convene council + trade</b>, or send opportunities through the Council tab first.</>}
+          {live
+            ? <><b style={{ color: C.green }}>Nova is live</b> — forming her first ideas and convening her council. Watch the feed above; the first position takes a couple of minutes (full Discovery → Council pass).</>
+            : <>Flip <b style={{ color: C.green }}>Go Live</b> and Nova starts trading on her own — her own ideas, her own council, narrated live. (Or <b style={{ color: C.blue }}>Seed last week</b> for an instant backtest.)</>}
         </div>
       )}
 
