@@ -1,0 +1,83 @@
+name: DB reproducibility
+
+# Move 0 success condition: a clean database, built ONLY from supabase/migrations/,
+# must boot. This proves the repo — not the live project — is the source of truth.
+# Runs on a fresh Postgres with a minimal Supabase auth stub (auth.users + auth.uid()
+# are the only Supabase-specific objects the migrations reference).
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/**'
+      - '.github/workflows/db-reproducibility.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/**'
+      - '.github/workflows/db-reproducibility.yml'
+
+jobs:
+  fresh-apply:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bootstrap Supabase-compatible auth stub
+        run: |
+          psql -v ON_ERROR_STOP=1 -c "create schema if not exists auth;"
+          psql -v ON_ERROR_STOP=1 -c "create table if not exists auth.users (id uuid primary key);"
+          psql -v ON_ERROR_STOP=1 -c 'create or replace function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;'
+
+      - name: Apply ALL migrations in order to the clean DB
+        run: |
+          set -e
+          for f in $(ls supabase/migrations/*.sql | sort); do
+            echo ">>> applying $f"
+            psql -v ON_ERROR_STOP=1 -f "$f"
+          done
+
+      - name: Smoke-check the reproduced schema
+        run: |
+          set -e
+          echo "All 9 expected tables present?"
+          psql -v ON_ERROR_STOP=1 -At -c "
+            select string_agg(t, ', ')
+            from unnest(array[
+              'tradeiq_holdings','tradeiq_journal','tradeiq_profiles','tradeiq_settings',
+              'tradeiq_watchlist','tradeiq_reviews','tradeiq_opportunities',
+              'tradeiq_council_sessions','tradeiq_filing_digests'
+            ]) t
+            where to_regclass('public.'||t) is null;
+          " | grep -q . && { echo 'MISSING TABLES ^'; exit 1; } || echo 'OK: all tables exist'
+          echo "Lineage columns present on tradeiq_journal (migration 0011)?"
+          psql -v ON_ERROR_STOP=1 -At -c "
+            select count(*)
+            from information_schema.columns
+            where table_schema='public' and table_name='tradeiq_journal'
+              and column_name in ('opportunity_id','council_session_hash','generation_confidence',
+                                  'opp_risk_level','decision_sector','price_at_gen','facts_present');
+          " | grep -qx '7' && echo 'OK: 7 lineage columns' || { echo 'MISSING lineage columns'; exit 1; }
+          echo "RLS enabled on all tradeiq_* tables?"
+          psql -v ON_ERROR_STOP=1 -At -c "
+            select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace
+            where n.nspname='public' and c.relkind='r'
+              and c.relname like 'tradeiq_%' and c.relrowsecurity = false;
+          " | grep -qx '0' && echo 'OK: RLS on every table' || { echo 'A tradeiq_ table is missing RLS'; exit 1; }
