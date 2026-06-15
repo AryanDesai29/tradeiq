@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { opportunityQueue, gatedInsights } from "../src/opportunityQueue.js";
+import { opportunityQueue, gatedInsights, worldCandidates } from "../src/opportunityQueue.js";
 
 const NOW = new Date("2026-06-16").getTime();
 const daysAgo = (n) => new Date(NOW - n * 86400000).toISOString().slice(0, 10);
@@ -77,6 +77,35 @@ test("queue is sorted by priority desc and every lead is explainable", () => {
   for (let i = 1; i < q.length; i++) assert.ok(q[i - 1].priority >= q[i].priority);
   assert.ok(q.every((l) => Array.isArray(l.reasons) && l.reasons.length > 0));
   assert.ok(q.every((l) => !JSON.stringify(l).includes("$")));  // no fabricated dollar figures
+});
+
+test("worldCandidates: AI-surfaced un-acted idea becomes a research candidate", () => {
+  const w = worldCandidates({ opportunities: [{ id: 5, ticker: "INFY.NS", thesis_type: "Margin Expansion", reality_hypothesis: "margins may inflect", confidence: 70, status: "new" }] });
+  const lead = w.find((l) => l.kind === "discovered_idea");
+  assert.ok(lead);
+  assert.equal(lead.status, "research_candidate");
+  assert.equal(lead.source, "world");
+  assert.match(lead.action, /Investigate/);
+  assert.ok(!/will outperform/i.test(JSON.stringify(lead)));  // never a buy/alpha call
+});
+
+test("worldCandidates: RS leader from prices; excludes held + already-on-board", () => {
+  const watchlist = [
+    { ticker: "TCS.NS", price: 100, ema20: 95, ema200: 90, rsi: 60, chg: 1.2 },   // uptrend + room → candidate
+    { ticker: "WIPRO.NS", price: 100, ema20: 95, ema200: 90, rsi: 80, chg: 0 },    // overbought → excluded
+    { ticker: "SBIN.NS", price: 100, ema20: 95, ema200: 90, rsi: 60 },             // held → excluded
+    { ticker: "AXISBANK.NS", price: 100, ema20: 95, ema200: 90, rsi: 60 },         // already an opp → excluded
+  ];
+  const w = worldCandidates({ watchlist, holdings: [{ ticker: "SBIN.NS" }], opportunities: [{ ticker: "AXISBANK.NS", status: "new" }] });
+  const rs = w.filter((l) => l.kind === "rs_leader").map((l) => l.ticker);
+  assert.deepEqual(rs, ["TCS.NS"]);
+});
+
+test("worldCandidates respects the limit and sorts by priority", () => {
+  const watchlist = Array.from({ length: 10 }, (_, i) => ({ ticker: `T${i}`, price: 100, ema20: 95, ema200: 90, rsi: 60 }));
+  const w = worldCandidates({ watchlist, limit: 4 });
+  assert.equal(w.length, 4);
+  for (let i = 1; i < w.length; i++) assert.ok(w[i - 1].priority >= w[i].priority);
 });
 
 test("gatedInsights locks pattern claims until enough closed trades", () => {

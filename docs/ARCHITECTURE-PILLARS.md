@@ -81,7 +81,15 @@ capital moves.
 - **Survival / anti-fabrication:** no invented numbers, dates, or "$ upside".
 
 ## Status & sequence
-1. **Layer 1 Opportunity Queue — shipped.** (this PR)
-2. **Layer 2 clean core — next:** insider Form 4 + earnings-revision signals as
-   inputs to Opportunity Discovery, every output a Council-routed hypothesis.
-3. **Scraping periphery — deferred** pending legal + a proven signal→return link.
+1. **Layer 1 Opportunity Queue — shipped.** The 🎯 Queue has two sections:
+   **WORLD** (research candidates) and **PORTFOLIO** (actions).
+2. **Layer 2 World V1 — shipped (in the Queue).** Research candidates from
+   legally-clean data TradeIQ already has: AI-surfaced ideas not yet acted on +
+   relative-strength / momentum leaders from live prices (US + India). Each is a
+   "research candidate → investigate", never a buy. `worldCandidates()` in
+   `src/opportunityQueue.js`.
+3. **Layer 2 World V2 — next:** insider Form 4 + earnings-revision + XBRL-buyback
+   signals (EDGAR already integrated, US) as inputs, every output a Council-routed
+   hypothesis — built once V1's signals prove they generate worthwhile research.
+4. **Scraping periphery — deferred** pending legal + a proven signal→return link.
+5. **Never a news feed.**
