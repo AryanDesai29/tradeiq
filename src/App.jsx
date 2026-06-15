@@ -19,6 +19,8 @@ import { trackFiling } from "./telemetry.js";
 import OpportunityPipeline from "./Pipeline.jsx";
 import ResearchWorkspace from "./ResearchWorkspace.jsx";
 import Autopilot from "./Autopilot.jsx";
+import Decisions from "./Decisions.jsx";
+import { findConflicts, decisionLabel } from "./decisions.js";
 import { defaultConfig as apConfig, decideEntries, decideExit, equityOf, accountStats, backtestPosition, pnlOf as apPnl, rMultipleOf as apR } from "./autopilot.js";
 import Council from "./Council.jsx";
 import MissionControl from "./MissionControl.jsx";
@@ -276,6 +278,7 @@ function TradeIQ({ session }) {
   const [apLive,setApLive]=useState(()=>{ try{return localStorage.getItem(`tradeiq_ap_live_${userId}`)==="1";}catch{return false;} }); // continuous live loop on/off
   const [apFeed,setApFeed]=useState([]); // live activity narration (newest first)
   const [apIdeas,setApIdeas]=useState([]); // Nova's OWN idea pool (not the shared board)
+  const [decisions,setDecisions]=useState([]); // Founder Memory Graph — recorded strategy decisions
   const apPhaseRef=useRef({phase:"scan",ticker:null,verdict:null,cooldownUntil:0});
   const apTickRef=useRef(null);
 
@@ -391,6 +394,8 @@ function TradeIQ({ session }) {
       if (pt) setPaperTrades(pt);
       const { data:ni } = await db.from("tradeiq_nova_ideas").select("*").order("created_at",{ascending:false}).limit(60);
       if (ni) setApIdeas(ni); // Nova's persistent idea memory
+      const { data:dec } = await db.from("tradeiq_decisions").select("*").order("created_at",{ascending:false});
+      if (dec) setDecisions(dec); // Founder Memory Graph
     } catch {}
   };
 
@@ -455,6 +460,23 @@ function TradeIQ({ session }) {
     try{ await db.from("tradeiq_reviews").update({user_thesis_verdict:verdict}).eq("trade_id",tradeId); }catch{}
   };
   const deleteTrade=async(id)=>{setSS("syncing");await db.from("tradeiq_journal").delete().eq("id",id);setJournal(p=>p.filter(t=>t.id!==id));setSS("synced");};
+  // ── FOUNDER MEMORY GRAPH — record decisions, flag conflicts, capture overrides ──
+  const addDecision=async(d)=>{
+    const row={user_id:userId,statement:String(d.statement||"").trim(),kind:d.kind||"avoid",tags:Array.isArray(d.tags)?d.tags:[]};
+    if(!row.statement)return;
+    try{ const {data}=await db.from("tradeiq_decisions").insert(row).select().single(); if(data){ setDecisions(p=>[data,...p]); return; } }catch(e){}
+    setDecisions(p=>[{...row,id:`d_${Date.now()}`,active:true,challenged_count:0,created_at:new Date().toISOString()},...p]); // offline fallback
+  };
+  const setDecisionActive=async(id,active)=>{
+    setDecisions(p=>p.map(x=>x.id===id?{...x,active}:x));
+    try{ if(typeof id==="number") await db.from("tradeiq_decisions").update({active,updated_at:new Date().toISOString()}).eq("id",id); }catch(e){}
+  };
+  // Manual "changed my mind": the founder went against a decision — capture WHY.
+  const challengeDecision=async(id,note)=>{
+    const cur=decisions.find(x=>x.id===id); const n=((cur?.challenged_count)||0)+1; const at=new Date().toISOString();
+    setDecisions(p=>p.map(x=>x.id===id?{...x,challenged_count:n,last_challenge_note:note||x.last_challenge_note,last_challenged_at:at}:x));
+    try{ if(typeof id==="number") await db.from("tradeiq_decisions").update({challenged_count:n,last_challenge_note:note||null,last_challenged_at:at,updated_at:at}).eq("id",id); }catch(e){}
+  };
 
   // ── OPPORTUNITY DISCOVERY ENGINE (P3) ──
   // The AI proposes investable theses from the current watchlist snapshot; they're
@@ -1020,7 +1042,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
 
   const syncLabel={idle:"",syncing:"⟳ Syncing",synced:"✓ Synced",error:"⚠ Error"};
   const syncColor={idle:C.muted,syncing:C.gold,synced:C.green,error:C.red};
-  const TABS=[{id:"dash",l:"🎛️ Mission Control"},{id:"autopilot",l:"🚀 Autopilot"},{id:"council",l:"🏛️ Council"},{id:"perf",l:"🧪 Alpha Lab"},{id:"opps",l:"💡 Opportunities"},{id:"ai",l:"🤖 AI Advisor"},{id:"scanner",l:"🔍 Scanner"},{id:"chart",l:"📈 Charts"},{id:"strategies",l:"⚡ Strategies"},{id:"journal",l:"📓 Journal"},{id:"learn",l:"📚 Learn"}];
+  const TABS=[{id:"dash",l:"🎛️ Mission Control"},{id:"autopilot",l:"🚀 Autopilot"},{id:"council",l:"🏛️ Council"},{id:"perf",l:"🧪 Alpha Lab"},{id:"opps",l:"💡 Opportunities"},{id:"ai",l:"🤖 AI Advisor"},{id:"scanner",l:"🔍 Scanner"},{id:"chart",l:"📈 Charts"},{id:"strategies",l:"⚡ Strategies"},{id:"journal",l:"📓 Journal"},{id:"decisions",l:"🧭 Decisions"},{id:"learn",l:"📚 Learn"}];
 
   // ── OPPORTUNITY PIPELINE TAB — the analyst desk board (Pipeline.jsx) ──
   const Opportunities=()=>(
@@ -1271,6 +1293,10 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
         <div style={{fontSize:T.caption,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:8}}>Trade Math · capital <Money value={cap} currency={tCur} decimals={0} size={T.caption} color={C.muted}/></div>
         <div style={{display:"flex",gap:18,flexWrap:"wrap"}}>{[["Risk/share",<Money value={rps} currency={tCur} size={14} color={C.red}/>,C.red],["Max loss",<Money value={cap*0.02} currency={tCur} size={14} color={C.red}/>,C.red],["Ideal shares",`${f(cap*0.02/rps,3)}`,C.accent],["R:R",newT.target?`1:${f((+newT.target-+newT.entry)/rps)}`:"-",(+newT.target-+newT.entry)/rps>=2?C.green:C.red]].map(([l,v,c])=>(<div key={l}><div style={{fontSize:T.caption,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:2}}>{l}</div><div style={{fontFamily:C.display,fontWeight:700,color:c,fontSize:14}}>{v}</div></div>))}</div>
       </div>);})()}
+      {(()=>{const conf=findConflicts(decisions,{thesisType:newT.thesisType,ticker:newT.ticker,currency:newT.meta?.currency});if(!conf.length)return null;return(<div style={{background:C.red+"14",border:`1px solid ${C.red}55`,borderRadius:8,padding:"10px 12px",marginBottom:10}}>
+        <div style={{fontSize:T.caption,fontWeight:700,color:C.red,marginBottom:5}}>⚠️ This conflicts with {conf.length===1?"a decision you recorded":`${conf.length} decisions you recorded`} — has your strategy changed?</div>
+        {conf.map(d=>(<div key={d.id} style={{fontSize:T.caption,color:C.text,marginBottom:4}}>“{decisionLabel(d)}” <button onClick={()=>{const note=typeof window!=="undefined"?window.prompt("You're going against this decision. What changed your mind?"):"";if(note!=null)challengeDecision(d.id,note);}} style={{marginLeft:6,background:"none",border:`1px solid ${C.gold}66`,color:C.gold,borderRadius:5,padding:"2px 8px",fontSize:T.micro,fontWeight:700,cursor:"pointer"}}>I changed my mind</button>{d.challenged_count>0&&<span style={{color:C.muted,marginLeft:6}}>· overridden {d.challenged_count}×</span>}</div>))}
+      </div>);})()}
       <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
         <Btn solid color={tValid?C.green:C.muted} onClick={addTrade}>{syncStatus==="syncing"?<Spinner/>:"✓ Save Trade"}</Btn>
         <Btn color={C.accent} onClick={()=>{const s=symbolFor(newT.meta?.currency);quickAsk(`Review before I trade: ${newT.ticker} ${newT.side} entry ${s}${newT.entry} stop ${s}${newT.stop} target ${s}${newT.target}. Valid setup? Risk correct for ${newT.meta?.currency==="INR"?"₹5,000":"my capital (~$60 / ₹5,000)"}?`);}}>AI Review First</Btn>
@@ -1343,7 +1369,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
         {TABS.map(t=>(<button key={t.id} className="tiq-btn tiq-tab" onClick={()=>setTab(t.id)} aria-current={tab===t.id?"page":undefined} style={{padding:"11px 13px",fontSize:12,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",fontFamily:C.display,background:tab===t.id?C.accent+"12":"none",border:"none",borderRadius:"8px 8px 0 0",borderBottom:tab===t.id?`2px solid ${C.accent}`:"2px solid transparent",color:tab===t.id?C.accent:C.muted,whiteSpace:"nowrap"}}>{t.l}</button>))}
       </div>
       <div key={tab} className="tab-in tiq-main" style={{padding:18,maxWidth:1240,margin:"0 auto"}}>
-        {tab==="council"&&<div className="tiq-bleed tiq-fit-full" style={{minHeight:480}}><Council theme={C} db={db} supabaseReady={SUPABASE_READY} userId={userId} holdings={holdings} journal={journal} reviews={Object.values(reviews)} opportunities={opportunities} watchlist={[...US_WATCHLIST,...INDIA_WATCHLIST]} request={councilRequest} onRequestConsumed={()=>setCouncilRequest(null)} onVerdict={handleCouncilVerdict}/></div>}{tab==="perf"&&<Performance journal={journal} reviews={Object.values(reviews)} opportunities={opportunities} userId={userId} theme={C}/>}{tab==="opps"&&Opportunities()}{tab==="dash"&&Dashboard()}{tab==="autopilot"&&<Autopilot account={paperAcct} trades={paperTrades} stats={accountStats(paperAcct||{cash:0,starting_cash:100000},paperTrades,apPriceOf)} busy={apBusy} msg={apMsg} priceOf={apPriceOf} onRun={runAutopilot} onCouncilRun={runAutopilotWithCouncil} onSeed={seedBacktest} onReset={resetDemo} live={apLive} feed={apFeed} onToggleLive={toggleLive} ideas={apIdeas} councilReadyCount={opportunities.filter(o=>(o.council_verdict==="Strong Buy"||o.council_verdict==="Buy")&&(o.council_confidence??0)>=60).length}/>}{tab==="ai"&&AIChat()}{tab==="scanner"&&Scanner()}{tab==="chart"&&<div className="tiq-bleed tiq-fit-full"><ChartView ticker={chartTicker} market={marketTab} onClose={null}/></div>}{tab==="strategies"&&StrategiesTab()}{tab==="journal"&&JournalTab()}{tab==="learn"&&Learn()}
+        {tab==="council"&&<div className="tiq-bleed tiq-fit-full" style={{minHeight:480}}><Council theme={C} db={db} supabaseReady={SUPABASE_READY} userId={userId} holdings={holdings} journal={journal} reviews={Object.values(reviews)} opportunities={opportunities} watchlist={[...US_WATCHLIST,...INDIA_WATCHLIST]} request={councilRequest} onRequestConsumed={()=>setCouncilRequest(null)} onVerdict={handleCouncilVerdict}/></div>}{tab==="perf"&&<Performance journal={journal} reviews={Object.values(reviews)} opportunities={opportunities} userId={userId} theme={C}/>}{tab==="opps"&&Opportunities()}{tab==="dash"&&Dashboard()}{tab==="autopilot"&&<Autopilot account={paperAcct} trades={paperTrades} stats={accountStats(paperAcct||{cash:0,starting_cash:100000},paperTrades,apPriceOf)} busy={apBusy} msg={apMsg} priceOf={apPriceOf} onRun={runAutopilot} onCouncilRun={runAutopilotWithCouncil} onSeed={seedBacktest} onReset={resetDemo} live={apLive} feed={apFeed} onToggleLive={toggleLive} ideas={apIdeas} councilReadyCount={opportunities.filter(o=>(o.council_verdict==="Strong Buy"||o.council_verdict==="Buy")&&(o.council_confidence??0)>=60).length}/>}{tab==="ai"&&AIChat()}{tab==="scanner"&&Scanner()}{tab==="chart"&&<div className="tiq-bleed tiq-fit-full"><ChartView ticker={chartTicker} market={marketTab} onClose={null}/></div>}{tab==="strategies"&&StrategiesTab()}{tab==="journal"&&JournalTab()}{tab==="decisions"&&<Decisions decisions={decisions} onAdd={addDecision} onSetActive={setDecisionActive}/>}{tab==="learn"&&Learn()}
       </div>
       {researchOpp&&<ResearchWorkspace opp={researchOpp} theme={C} onSave={saveResearch} onCreateTrade={(o)=>{critiqueAndLog(o);setResearchOpp(null);}} onClose={()=>setResearchOpp(null)} onRunResearch={researchOpportunity} researching={researchingId===researchOpp.id} onIngestFiling={ingestFiling} ingestingAcc={ingestingAcc} onFilingEvent={logFiling}/>}
 
