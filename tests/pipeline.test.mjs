@@ -4,6 +4,7 @@ import {
   PIPELINE_STATES, pipelineState, canMove, boardColumn, stateCounts,
   personalLens, lensBlock, edgeScore, researchConfidenceScore,
   councilConfidenceScore, riskScore, scoreOpportunity, rankOpportunities,
+  lineageSnapshot,
 } from "../src/pipeline.js";
 
 // A closed trade with a usable R: entry 100, stop 90 (risk 10/sh) → exit sets R.
@@ -113,4 +114,45 @@ test("rankOpportunities excludes archived and sorts by composite", () => {
   ], null);
   assert.equal(ranked.length, 2);
   assert.equal(ranked[0].opp.id, 2);
+});
+
+// ─── Lineage snapshot (migration 0011 — decision context across the trade boundary) ───
+test("lineageSnapshot captures the full decision context, snake-keyed for the journal insert", () => {
+  const opp = {
+    id: 42, ticker: "RELIANCE.NS", confidence: 72, risk_level: "medium",
+    council_verdict: "Buy", council_confidence: 80, council_session_hash: "abc123",
+    price_at_gen: 1234.5, researched_at: "2026-06-15T00:00:00Z",
+    research_brief: { research_confidence: 60 },
+    research_facts: { revenue: [] },
+    research_digests: { "000111": {}, "000222": {} },
+  };
+  const snap = lineageSnapshot(opp);
+  assert.equal(snap.opportunity_id, 42);
+  assert.equal(snap.generation_confidence, 72);          // opp.confidence frozen as generation_confidence
+  assert.equal(snap.opp_risk_level, "medium");
+  assert.equal(snap.council_verdict, "Buy");
+  assert.equal(snap.council_confidence, 80);
+  assert.equal(snap.council_session_hash, "abc123");     // durable trade → debate link
+  assert.equal(snap.price_at_gen, 1234.5);
+  assert.equal(snap.opp_researched_at, "2026-06-15T00:00:00Z");
+  assert.equal(snap.research_brief_present, true);
+  assert.equal(snap.facts_present, true);
+  assert.equal(snap.filing_digest_count, 2);
+  assert.equal(snap.decision_sector, "Energy & Conglomerate"); // from the app's THEME_MAP
+});
+
+test("lineageSnapshot: offline (string id) opportunities get a null opportunity_id, no fabrication", () => {
+  const snap = lineageSnapshot({ id: "local_123_0", ticker: "ZZZZ" });
+  assert.equal(snap.opportunity_id, null);   // local_* ids never reached the DB
+  assert.equal(snap.decision_sector, null);  // unmapped ticker → null, not guessed
+  assert.equal(snap.council_verdict, null);
+  assert.equal(snap.generation_confidence, null);
+  assert.equal(snap.research_brief_present, false);
+  assert.equal(snap.facts_present, false);
+  assert.equal(snap.filing_digest_count, 0);
+});
+
+test("lineageSnapshot is null-safe", () => {
+  assert.deepEqual(lineageSnapshot(null), {});
+  assert.deepEqual(lineageSnapshot(undefined), {});
 });
