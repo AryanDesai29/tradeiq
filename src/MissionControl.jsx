@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 import { C, T } from "./theme.js";
 import { TickerID, Money, Term } from "./ui.jsx";
 import { coalitions } from "./council.js";
+import { positionValue } from "./valuation.js";
 import { track, usageSummary, filingImpactReport } from "./telemetry.js";
 import {
   openPositions, thesisHealth, HEALTH_LABEL, actionQueue, featuredOpportunity,
@@ -41,7 +42,7 @@ const Kv = ({ label, children, color = C.text }) => (
   </div>
 );
 
-export default function MissionControl({ holdings = [], journal = [], reviewsMap = {}, opportunities = [], liveData = {}, userId, fx = { USD: 1, INR: 1 / 84 }, goTab, onOpenResearch, onLogTrade }) {
+export default function MissionControl({ holdings = [], journal = [], reviewsMap = {}, opportunities = [], liveData = {}, userId, goTab, onOpenResearch, onLogTrade }) {
   const [showExposure, setShowExposure] = useState(false);
   // Local-only usage instrumentation (see telemetry.js). `hit` then act.
   const hit = (key) => track(localStorage, userId, key);
@@ -53,8 +54,9 @@ export default function MissionControl({ holdings = [], journal = [], reviewsMap
   }, [userId]);
   const reviews = useMemo(() => Object.values(reviewsMap), [reviewsMap]);
   const liveOf = (tk) => liveData[tk]?.price ?? null;
-  const pfItems = useMemo(() => holdings.map((h) => ({ ticker: h.ticker, sector: h.sector, value: (+h.shares || 0) * (+h.price || 0) * (fx[h.currency] || 1) })), [holdings, fx]);
-  const totalUsd = pfItems.reduce((s, i) => s + i.value, 0);
+  const pfItems = useMemo(() => holdings.map((h) => ({ ticker: h.ticker, sector: h.sector, value: positionValue(h).inr })), [holdings]); // normalized to INR (src/valuation.js)
+  const totalINR = pfItems.reduce((s, i) => s + i.value, 0);
+  const mixedCcy = new Set(holdings.map((h) => h.currency || "INR")).size > 1;
 
   const council = useMemo(() => lastCouncil(localStorage, userId), [userId]);
   const stats = useMemo(() => commandStats(pfItems, holdings, journal), [pfItems, holdings, journal]);
@@ -99,8 +101,8 @@ export default function MissionControl({ holdings = [], journal = [], reviewsMap
           {holdings.length === 0 ? <Empty>No holdings yet — add positions in the Manage section below to power the command center.</Empty> : (
             <>
               <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
-                <Money value={totalUsd} currency="USD" decimals={0} size={26} />
-                <span style={{ fontSize: T.caption, color: C.muted }}>≈ <Money value={totalUsd / (fx.INR || 1)} currency="INR" decimals={0} size={T.caption} /> @ ₹{Math.round(1 / (fx.INR || 1))}/$</span>
+                <Money value={totalINR} currency="INR" decimals={0} size={26} />
+                {mixedCcy && <span style={{ fontSize: T.caption, color: C.muted }}>₹-normalized across markets</span>}
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(118px,1fr))", gap: 10 }}>
                 <Kv label="Positions">{stats.positions}</Kv>

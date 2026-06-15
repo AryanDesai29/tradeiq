@@ -19,6 +19,7 @@ import { concentration, themeExposure, portfolioRiskFlags, correlationClusters }
 import { symbolFor } from "./stock.js";
 import { factsLine } from "./facts.js";
 import { digestLine, latestDigest } from "./filings.js";
+import { positionValue } from "./valuation.js";
 
 // ── Members ──────────────────────────────────────────────────────────────────
 // Seat order = order around the table (chairman at top, then clockwise).
@@ -223,7 +224,7 @@ export function cachePut(store, key, hash, rec, max = 12) {
 
 // ── Personalized context (client-built, sent to the server like systemPrompt) ─
 // Only REAL account data goes in — the same honesty rule as the rest of the app.
-const FX = { USD: 1, INR: 1 / 84 };
+// Portfolio exposure is valued via the single INR valuation path (src/valuation.js).
 const r = (v) => `${v >= 0 ? "+" : ""}${(+v).toFixed(2)}R`;
 
 export function buildCouncilContext({ holdings = [], journal = [], reviews = [], opportunities = [], watchlist = [], topic = null, compact = false } = {}) {
@@ -232,7 +233,7 @@ export function buildCouncilContext({ holdings = [], journal = [], reviews = [],
   if (compact) {
     const out = [];
     if (holdings.length) {
-      const items = holdings.map((h) => ({ ticker: h.ticker, sector: h.sector, value: (+h.shares || 0) * (+h.price || 0) * (FX[h.currency] || 1) }));
+      const items = holdings.map((h) => ({ ticker: h.ticker, sector: h.sector, value: positionValue(h).inr }));
       const con = concentration(items);
       const theme = themeExposure(items)[0];
       out.push(`PF: ${holdings.slice(0, 6).map((h) => `${h.ticker} ${h.shares}sh ${symbolFor(h.currency)}${h.price}`).join(", ")}${holdings.length > 6 ? ` +${holdings.length - 6}` : ""} | top1 ${con.largest ? `${con.largest.ticker} ${(con.top1Pct * 100).toFixed(0)}%` : "—"}, top3 ${(con.top3Pct * 100).toFixed(0)}%${theme ? `, ${theme.key} ${(theme.pct * 100).toFixed(0)}%` : ""}`);
@@ -260,7 +261,7 @@ export function buildCouncilContext({ holdings = [], journal = [], reviews = [],
 
   // Portfolio + intelligence
   if (holdings.length) {
-    const items = holdings.map((h) => ({ ticker: h.ticker, sector: h.sector, value: (+h.shares || 0) * (+h.price || 0) * (FX[h.currency] || 1) }));
+    const items = holdings.map((h) => ({ ticker: h.ticker, sector: h.sector, value: positionValue(h).inr }));
     const con = concentration(items);
     const themes = themeExposure(items).slice(0, 4).map((t) => `${t.key} ${(t.pct * 100).toFixed(0)}%`).join(", ");
     const flags = portfolioRiskFlags(items).map((f) => f.text);

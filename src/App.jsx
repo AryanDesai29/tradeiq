@@ -24,6 +24,7 @@ import { findConflicts, decisionLabel } from "./decisions.js";
 import OpportunityQueue from "./OpportunityQueue.jsx";
 import { opportunityQueue, gatedInsights, worldCandidates } from "./opportunityQueue.js";
 import { disposition as oppDisposition, perfPct as oppPerf, newToRemember, memoryStats } from "./opportunityMemory.js";
+import { portfolioValue, capitalIn } from "./valuation.js";
 import { defaultConfig as apConfig, decideEntries, decideExit, equityOf, accountStats, backtestPosition, pnlOf as apPnl, rMultipleOf as apR } from "./autopilot.js";
 import Council from "./Council.jsx";
 import MissionControl from "./MissionControl.jsx";
@@ -430,10 +431,12 @@ function TradeIQ({ session }) {
   // A ticker is "valid" only if it came from a selected search result.
   const hValid=!!(newH.meta&&newH.meta.symbol===newH.ticker&&newH.avgCost);
   const tValid=!!(newT.meta&&newT.meta.symbol===newT.ticker&&newT.entry&&thesisComplete(newT));
-  const totalVal  = holdings.reduce((s,h)=>s+h.shares*h.price,0);
-  const totalCost = holdings.reduce((s,h)=>s+h.shares*h.avgCost,0);
-  const totalPnL  = totalVal-totalCost;
-  const pnlPct    = totalCost>0?(totalPnL/totalCost)*100:0;
+  // Single normalized (INR) valuation path — no more ₹+$ mixing (src/valuation.js).
+  const _pf       = portfolioValue(holdings);
+  const totalVal  = _pf.totalINR;   // INR
+  const totalCost = _pf.costINR;
+  const totalPnL  = _pf.pnlINR;
+  const pnlPct    = _pf.pnlPct;
 
   // ── DB ops ──
   const addHolding = async()=>{
@@ -1116,7 +1119,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
   // stopPrice/targetPrice are kept NUMERIC (no currency symbol baked in) so the
   // "Log" button can feed them straight into the journal's number fields. The
   // currency symbol (curr) is applied only at display time.
-  const scanResults=WATCHLIST.filter(w=>w.price&&w.ema20&&w.ema200).map(w=>{const nearEma=Math.abs(w.price-w.ema20)/w.ema20<0.03;const sig=(nearEma&&w.price>w.ema200&&w.rsi>=38&&w.rsi<=62)?"EMA PULLBACK":(w.price>w.ema200&&w.rsi>60&&w.rsi<75)?"BREAKOUT WATCH":"WAIT";const sigC=sig==="EMA PULLBACK"?C.green:sig==="BREAKOUT WATCH"?C.gold:C.muted;const curr=symbolFor(w.currency);const dp=decimalsFor(w.currency);const cap=w.currency==="INR"?(totalVal||59)*84:(totalVal||59);return{...w,signal:sig,sigColor:sigC,curr,posSize:f(cap*0.02/(w.price*0.025),3),stopPrice:f(w.price*0.975,dp),targetPrice:f(w.price*1.06,dp)};}).sort((a,b)=>(b.signal==="EMA PULLBACK"?1:0)-(a.signal==="EMA PULLBACK"?1:0));
+  const scanResults=WATCHLIST.filter(w=>w.price&&w.ema20&&w.ema200).map(w=>{const nearEma=Math.abs(w.price-w.ema20)/w.ema20<0.03;const sig=(nearEma&&w.price>w.ema200&&w.rsi>=38&&w.rsi<=62)?"EMA PULLBACK":(w.price>w.ema200&&w.rsi>60&&w.rsi<75)?"BREAKOUT WATCH":"WAIT";const sigC=sig==="EMA PULLBACK"?C.green:sig==="BREAKOUT WATCH"?C.gold:C.muted;const curr=symbolFor(w.currency);const dp=decimalsFor(w.currency);const cap=capitalIn(w.currency,holdings)||SIM_CAP[w.currency]||SIM_CAP.INR;return{...w,signal:sig,sigColor:sigC,curr,posSize:f(cap*0.02/(w.price*0.025),3),stopPrice:f(w.price*0.975,dp),targetPrice:f(w.price*1.06,dp)};}).sort((a,b)=>(b.signal==="EMA PULLBACK"?1:0)-(a.signal==="EMA PULLBACK"?1:0));
 
   const syncLabel={idle:"",syncing:"⟳ Syncing",synced:"✓ Synced",error:"⚠ Error"};
   const syncColor={idle:C.muted,syncing:C.gold,synced:C.green,error:C.red};
@@ -1133,10 +1136,10 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
 
   // ── DASHBOARD ──
   // Portfolio in a common base (USD) so ₹ and $ positions are comparable.
-  const FX={USD:1,INR:1/84};
+  // FX + valuation are centralised in src/valuation.js (FX_INR). One money path.
   const Dashboard=()=>(
     <div>
-      <MissionControl holdings={holdings} journal={journal} reviewsMap={reviews} opportunities={opportunities} liveData={liveData} userId={userId} fx={FX} goTab={setTab} onOpenResearch={(o)=>setResearchOpp(o)} onLogTrade={critiqueAndLog}/>
+      <MissionControl holdings={holdings} journal={journal} reviewsMap={reviews} opportunities={opportunities} liveData={liveData} userId={userId} goTab={setTab} onOpenResearch={(o)=>setResearchOpp(o)} onLogTrade={critiqueAndLog}/>
       <div style={{display:"flex",alignItems:"center",gap:10,margin:"6px 0 12px"}}><div style={{fontFamily:C.display,fontWeight:700,fontSize:T.micro,letterSpacing:"0.16em",textTransform:"uppercase",color:C.muted}}>Manage · Holdings & Watchlist</div><div style={{flex:1,height:1,background:C.border}}/></div>
       <div className="tiq-2col" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
         <Card>
@@ -1276,7 +1279,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
         <div style={{width:130}}><Inp label={`Entry (${calcSym})`} type="number" value={calcE} onChange={e=>setCalcE(e.target.value)} placeholder={calcCur==="INR"?"2750.00":"205.50"}/></div>
         <div style={{width:130}}><Inp label={`Stop-Loss (${calcSym})`} type="number" value={calcS} onChange={e=>setCalcS(e.target.value)} placeholder={calcCur==="INR"?"2680.00":"198.00"}/></div>
         <div style={{width:90}}><Inp label="Risk %" type="number" value={calcR} onChange={e=>setCalcR(e.target.value)} placeholder="2"/></div>
-        <Btn solid color={C.accent} onClick={()=>{const e=+calcE,s=+calcS,r=+calcR/100||0.02;if(!e||!s||e<=s){setCalcRes(null);return;}const cap=totalVal||(calcCur==="INR"?SIM_CAP.INR:SIM_CAP.USD);const rps=e-s;const dr=cap*r;const sh=dr/rps;setCalcRes({shares:f(sh,3),cost:f(sh*e),loss:f(dr),rps:f(rps),t2:f(e+rps*2),t3:f(e+rps*3)});}}>Calculate</Btn>
+        <Btn solid color={C.accent} onClick={()=>{const e=+calcE,s=+calcS,r=+calcR/100||0.02;if(!e||!s||e<=s){setCalcRes(null);return;}const cap=capitalIn(calcCur,holdings)||(calcCur==="INR"?SIM_CAP.INR:SIM_CAP.USD);const rps=e-s;const dr=cap*r;const sh=dr/rps;setCalcRes({shares:f(sh,3),cost:f(sh*e),loss:f(dr),rps:f(rps),t2:f(e+rps*2),t3:f(e+rps*3)});}}>Calculate</Btn>
       </div>
       {calcRes&&(<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:10,marginTop:14}}>{[["Shares",calcRes.shares,C.accent],["Cost",<Money value={calcRes.cost} currency={calcCur} size={14} color={C.text}/>,C.text],["Max Loss",<Money value={calcRes.loss} currency={calcCur} size={14} color={C.red}/>,C.red],["Risk/Share",<Money value={calcRes.rps} currency={calcCur} size={14} color={C.muted}/>,C.muted],["Target 1:2",<Money value={calcRes.t2} currency={calcCur} size={14} color={C.green}/>,C.green],["Target 1:3",<Money value={calcRes.t3} currency={calcCur} size={14} color={C.green}/>,C.green]].map(([l,v,c])=>(<div key={l} style={{background:C.s2,border:`1px solid ${C.border}`,borderRadius:5,padding:10}}><div style={{fontSize:T.caption,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:3}}>{l}</div><div style={{fontFamily:C.display,fontWeight:700,color:c,fontSize:14}}>{v}</div></div>))}</div>)}
     </Card>
@@ -1367,7 +1370,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
           <textarea className="tiq-input" value={newT.evidence} onChange={e=>setNewT(p=>({...p,evidence:e.target.value}))} placeholder="TSMC guidance, cloud capex, supplier commentary…" style={{background:C.s1,border:`1px solid ${C.border}`,borderRadius:5,padding:"7px 10px",color:C.text,fontFamily:C.mono,fontSize:T.data,width:"100%",height:34,resize:"vertical"}}/>
         </div>
       </div>
-      {newT.entry&&newT.stop&&+newT.entry>+newT.stop&&(()=>{const tCur=newT.meta?.currency;const cap=tCur==="INR"?SIM_CAP.INR:(totalVal||SIM_CAP.USD);const rps=+newT.entry-+newT.stop;return(<div style={{background:C.s2,border:`1px solid ${C.border}`,borderRadius:6,padding:12,marginBottom:10}}>
+      {newT.entry&&newT.stop&&+newT.entry>+newT.stop&&(()=>{const tCur=newT.meta?.currency;const cap=capitalIn(tCur||"INR",holdings)||(tCur==="INR"?SIM_CAP.INR:SIM_CAP.USD);const rps=+newT.entry-+newT.stop;return(<div style={{background:C.s2,border:`1px solid ${C.border}`,borderRadius:6,padding:12,marginBottom:10}}>
         <div style={{fontSize:T.caption,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:8}}>Trade Math · capital <Money value={cap} currency={tCur} decimals={0} size={T.caption} color={C.muted}/></div>
         <div style={{display:"flex",gap:18,flexWrap:"wrap"}}>{[["Risk/share",<Money value={rps} currency={tCur} size={14} color={C.red}/>,C.red],["Max loss",<Money value={cap*0.02} currency={tCur} size={14} color={C.red}/>,C.red],["Ideal shares",`${f(cap*0.02/rps,3)}`,C.accent],["R:R",newT.target?`1:${f((+newT.target-+newT.entry)/rps)}`:"-",(+newT.target-+newT.entry)/rps>=2?C.green:C.red]].map(([l,v,c])=>(<div key={l}><div style={{fontSize:T.caption,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:2}}>{l}</div><div style={{fontFamily:C.display,fontWeight:700,color:c,fontSize:14}}>{v}</div></div>))}</div>
       </div>);})()}
@@ -1435,7 +1438,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
           {lastUpdated&&<span className="tiq-hide-sm" style={{fontSize:T.caption,color:C.muted,marginLeft:4}}>Updated {lastUpdated.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}</span>}
         </div>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
-          <div style={{textAlign:"right"}}><div style={{fontSize:T.micro,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em"}}>Portfolio</div><div style={{fontFamily:C.display,fontWeight:700,color:C.accent,fontSize:14}}>{holdings.length===0?<Money value={0} currency="INR" decimals={0} size={14} color={C.accent}/>:<Money value={totalVal} currency="USD" size={14} color={C.accent}/>}{holdings.length>0&&<span style={{fontSize:T.caption,color:C.muted}}> / <Money value={totalVal*84} currency="INR" decimals={0} size={T.caption} color={C.muted}/></span>}</div></div>
+          <div style={{textAlign:"right"}}><div style={{fontSize:T.micro,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em"}}>Portfolio</div><div style={{fontFamily:C.display,fontWeight:700,color:C.accent,fontSize:14}}><Money value={totalVal} currency="INR" decimals={0} size={14} color={C.accent}/>{_pf.mixed&&<span style={{fontSize:T.caption,color:C.muted}}> · ₹-normalized</span>}</div></div>
           {holdings.length>0&&<div className="tiq-hide-sm" style={{fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:4,background:pc(totalPnL)+"18",color:pc(totalPnL),border:`1px solid ${pc(totalPnL)}28`}}><Money value={totalPnL} currency="USD" signed code={false} size={11} color="inherit"/> ({ps(pnlPct)}{f(pnlPct)}%)</div>}
           <span className="tiq-hide-sm" style={{display:"inline-flex",gap:8}}>
             <Btn small color={C.muted} onClick={loadAll}>{syncStatus==="syncing"?<Spinner/>:"⟳"}</Btn>
@@ -1447,7 +1450,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
         {TABS.map(t=>(<button key={t.id} className="tiq-btn tiq-tab" onClick={()=>setTab(t.id)} aria-current={tab===t.id?"page":undefined} style={{padding:"11px 13px",fontSize:12,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",fontFamily:C.display,background:tab===t.id?C.accent+"12":"none",border:"none",borderRadius:"8px 8px 0 0",borderBottom:tab===t.id?`2px solid ${C.accent}`:"2px solid transparent",color:tab===t.id?C.accent:C.muted,whiteSpace:"nowrap"}}>{t.l}</button>))}
       </div>
       <div key={tab} className="tab-in tiq-main" style={{padding:18,maxWidth:1240,margin:"0 auto"}}>
-        {tab==="council"&&<div className="tiq-bleed tiq-fit-full" style={{minHeight:480}}><Council theme={C} db={db} supabaseReady={SUPABASE_READY} userId={userId} holdings={holdings} journal={journal} reviews={Object.values(reviews)} opportunities={opportunities} watchlist={[...US_WATCHLIST,...INDIA_WATCHLIST]} request={councilRequest} onRequestConsumed={()=>setCouncilRequest(null)} onVerdict={handleCouncilVerdict}/></div>}{tab==="perf"&&<Performance journal={journal} reviews={Object.values(reviews)} opportunities={opportunities} userId={userId} theme={C}/>}{tab==="opps"&&Opportunities()}{tab==="dash"&&Dashboard()}{tab==="cio"&&<OpportunityQueue world={worldCandidates({watchlist:[...INDIA_WATCHLIST,...US_WATCHLIST],opportunities,holdings,news:apNews})} portfolio={opportunityQueue({holdings,journal,opportunities,decisions,now:Date.now(),fx:FX})} gated={gatedInsights({journal})} memory={apMemory} memoryStats={memoryStats(apMemory)} onInvestigate={investigateCandidate}/>}{tab==="autopilot"&&<Autopilot account={paperAcct} trades={paperTrades} stats={accountStats(paperAcct||{cash:0,starting_cash:100000},paperTrades,apPriceOf)} busy={apBusy} msg={apMsg} priceOf={apPriceOf} onRun={runAutopilot} onCouncilRun={runAutopilotWithCouncil} onSeed={seedBacktest} onReset={resetDemo} live={apLive} feed={apFeed} onToggleLive={toggleLive} ideas={apIdeas} councilReadyCount={opportunities.filter(o=>(o.council_verdict==="Strong Buy"||o.council_verdict==="Buy")&&(o.council_confidence??0)>=60).length}/>}{tab==="ai"&&AIChat()}{tab==="scanner"&&Scanner()}{tab==="chart"&&<div className="tiq-bleed tiq-fit-full"><ChartView ticker={chartTicker} market={marketTab} onClose={null}/></div>}{tab==="strategies"&&StrategiesTab()}{tab==="journal"&&JournalTab()}{tab==="decisions"&&<Decisions decisions={decisions} onAdd={addDecision} onSetActive={setDecisionActive}/>}{tab==="learn"&&Learn()}
+        {tab==="council"&&<div className="tiq-bleed tiq-fit-full" style={{minHeight:480}}><Council theme={C} db={db} supabaseReady={SUPABASE_READY} userId={userId} holdings={holdings} journal={journal} reviews={Object.values(reviews)} opportunities={opportunities} watchlist={[...US_WATCHLIST,...INDIA_WATCHLIST]} request={councilRequest} onRequestConsumed={()=>setCouncilRequest(null)} onVerdict={handleCouncilVerdict}/></div>}{tab==="perf"&&<Performance journal={journal} reviews={Object.values(reviews)} opportunities={opportunities} userId={userId} theme={C}/>}{tab==="opps"&&Opportunities()}{tab==="dash"&&Dashboard()}{tab==="cio"&&<OpportunityQueue world={worldCandidates({watchlist:[...INDIA_WATCHLIST,...US_WATCHLIST],opportunities,holdings,news:apNews})} portfolio={opportunityQueue({holdings,journal,opportunities,decisions,now:Date.now()})} gated={gatedInsights({journal})} memory={apMemory} memoryStats={memoryStats(apMemory)} onInvestigate={investigateCandidate}/>}{tab==="autopilot"&&<Autopilot account={paperAcct} trades={paperTrades} stats={accountStats(paperAcct||{cash:0,starting_cash:100000},paperTrades,apPriceOf)} busy={apBusy} msg={apMsg} priceOf={apPriceOf} onRun={runAutopilot} onCouncilRun={runAutopilotWithCouncil} onSeed={seedBacktest} onReset={resetDemo} live={apLive} feed={apFeed} onToggleLive={toggleLive} ideas={apIdeas} councilReadyCount={opportunities.filter(o=>(o.council_verdict==="Strong Buy"||o.council_verdict==="Buy")&&(o.council_confidence??0)>=60).length}/>}{tab==="ai"&&AIChat()}{tab==="scanner"&&Scanner()}{tab==="chart"&&<div className="tiq-bleed tiq-fit-full"><ChartView ticker={chartTicker} market={marketTab} onClose={null}/></div>}{tab==="strategies"&&StrategiesTab()}{tab==="journal"&&JournalTab()}{tab==="decisions"&&<Decisions decisions={decisions} onAdd={addDecision} onSetActive={setDecisionActive}/>}{tab==="learn"&&Learn()}
       </div>
       {researchOpp&&<ResearchWorkspace opp={researchOpp} theme={C} onSave={saveResearch} onCreateTrade={(o)=>{critiqueAndLog(o);setResearchOpp(null);}} onClose={()=>setResearchOpp(null)} onRunResearch={researchOpportunity} researching={researchingId===researchOpp.id} onIngestFiling={ingestFiling} ingestingAcc={ingestingAcc} onFilingEvent={logFiling}/>}
 
