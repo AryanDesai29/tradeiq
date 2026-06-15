@@ -41,11 +41,12 @@ New migration **`0000_base_schema.sql`** — numbered to apply **before** `0001`
 ### Fresh-install validation
 - **DDL parity:** `0000` was generated from live introspection (columns/types/defaults/uniques/checks/indexes/policies), so it reproduces production by construction.
 - **Dependency order:** proven above — `0001`'s FK to `journal` (the original failure) resolves because `0000` precedes it.
-- **Conclusive fresh apply (`supabase db reset`): NOT run in this environment** — no local Supabase CLI/Docker available. Reviewer/CI step to get the green:
-  ```bash
-  supabase db reset          # applies 0000…0011 to a clean local DB
+- **Conclusive fresh apply: PROVEN in CI.** `.github/workflows/db-reproducibility.yml` spins up a clean Postgres, stubs the only two Supabase-specific objects the migrations use (`auth.users`, `auth.uid()`), applies `0000…0011` in order, and asserts the schema. Green on PR #17:
   ```
-  (Or apply to a Supabase preview branch.) This is the one box left to tick; everything it would exercise is logically and catalog-confirmed above.
+  >>> applying 0000_base_schema.sql … 0011_trade_lineage.sql   (all 12, in order)
+  OK: all tables exist   ·   OK: 7 lineage columns   ·   OK: RLS on every table
+  ```
+  This is now a permanent gate — every future migration PR re-proves "clone → run migrations → clean DB boots." (A local `supabase db reset` against the full Supabase stack remains available for higher-fidelity RLS-behaviour testing, but the boot/reproducibility success condition is demonstrated.)
 
 ### Known smells preserved verbatim (for the cleanup follow-up)
 - `tradeiq_settings.key` is **globally unique** (not per-user) — two users cannot share a key.
