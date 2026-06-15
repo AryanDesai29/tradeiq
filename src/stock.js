@@ -13,7 +13,7 @@ export const SYM = { INR: "₹", USD: "$" };
 
 // Display symbol for a record's stored currency. This is the single source for
 // "₹" vs "$" in the whole UI.
-export const symbolFor = (currency) => SYM[currency] || SYM.USD;
+export const symbolFor = (currency) => SYM[currency] || SYM.INR;
 
 // Decimal places for a price in the given currency (centralised for future
 // per-currency tuning; both are 2 today).
