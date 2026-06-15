@@ -20,8 +20,10 @@ const Stat = ({ label, children }) => (
 );
 
 const fmtDate = (d) => { try { return new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short" }); } catch { return "—"; } };
+const FEED_COLOR = { live: C.accent, scan: C.muted, discover: C.gold, pick: C.blue, research: C.blue, council: C.gold, decision: C.accent, entry: C.green, exit: C.red, wait: C.muted, error: C.red };
+const relTime = (ts) => { const s = Math.max(0, Math.round((Date.now() - ts) / 1000)); if (s < 60) return `${s}s`; const m = Math.round(s / 60); return m < 60 ? `${m}m` : `${Math.round(m / 60)}h`; };
 
-export default function Autopilot({ account, trades = [], stats, busy, msg, priceOf = () => null, onRun, onCouncilRun, onSeed, onReset, councilReadyCount = 0 }) {
+export default function Autopilot({ account, trades = [], stats, busy, msg, priceOf = () => null, onRun, onCouncilRun, onSeed, onReset, live = false, feed = [], onToggleLive, councilReadyCount = 0 }) {
   const [openLog, setOpenLog] = useState({});
   const open = trades.filter((t) => t.status === "open");
   const closed = trades.filter((t) => t.status === "closed");
@@ -37,6 +39,7 @@ export default function Autopilot({ account, trades = [], stats, busy, msg, pric
         <div style={{ fontFamily: C.display, fontWeight: 800, fontSize: 22 }}>🚀 Paper Autopilot</div>
         <Badge>Paper · Simulation</Badge>
         <Badge color={C.blue}>Council-gated</Badge>
+        {live && <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: T.micro, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.green }}><span className="live-dot" style={{ width: 7, height: 7, borderRadius: "50%", background: C.green, display: "inline-block" }} />LIVE</span>}
         {account?.started_at && <span style={{ fontSize: T.caption, color: C.muted }}>running since {fmtDate(account.started_at)}</span>}
       </div>
       <div style={{ fontSize: T.caption, color: C.muted, marginBottom: 14, maxWidth: 720 }}>
@@ -55,7 +58,8 @@ export default function Autopilot({ account, trades = [], stats, busy, msg, pric
 
       {/* Controls */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 12 }}>
-        <Btn solid onClick={onRun} title="Free — trades only ideas the Council has already approved">▶ Run now</Btn>
+        <button onClick={onToggleLive} title="Run constantly: monitor prices + source ideas through Discovery → Research → Council → execution, narrated live (uses AI credits while on)" style={{ background: live ? C.red : C.green, border: "none", color: C.bg, fontFamily: C.display, fontWeight: 800, fontSize: 12, letterSpacing: "0.06em", textTransform: "uppercase", padding: "10px 16px", borderRadius: 8, cursor: "pointer" }}>{live ? "⏸ Pause autopilot" : "▶ Go Live"}</button>
+        <Btn onClick={onRun} title="One pass now (free) — trades only ideas the Council has already approved">▶ Run once</Btn>
         <Btn color={C.gold} onClick={onCouncilRun} title="Convenes the Council on top ideas first, then trades — uses AI credits">🏛️ Convene council + trade</Btn>
         <Btn color={C.blue} onClick={onSeed} title="Honest backtest: replays council-approved ideas over the last 7 trading days using real historical prices">⏪ Seed last week (backtest)</Btn>
         {(open.length || closed.length) ? <Btn color={C.red} onClick={onReset} title="Wipe the demo account back to starting cash">↺ Reset</Btn> : null}
@@ -63,6 +67,24 @@ export default function Autopilot({ account, trades = [], stats, busy, msg, pric
       </div>
 
       {msg && <div style={{ background: C.s2, border: `1px solid ${C.accent}3a`, borderRadius: 8, padding: "10px 12px", marginBottom: 14, fontSize: T.data, color: C.text, whiteSpace: "pre-wrap" }}>{msg}</div>}
+
+      {/* Live activity feed — watch it use the whole app in real time */}
+      {feed.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "4px 0 8px" }}>
+            <div style={{ fontFamily: C.display, fontWeight: 700, fontSize: 13, letterSpacing: "0.12em", textTransform: "uppercase", color: C.muted }}>Live activity</div>
+            {live && <span style={{ fontSize: T.micro, color: C.green }}>● streaming</span>}
+          </div>
+          <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 10, maxHeight: 320, overflowY: "auto", padding: "6px 0" }}>
+            {feed.map((e, i) => (
+              <div key={e.at + "_" + i} style={{ display: "flex", gap: 10, padding: "6px 13px", borderLeft: `3px solid ${FEED_COLOR[e.phase] || C.muted}`, alignItems: "baseline" }}>
+                <span style={{ fontFamily: C.mono, fontSize: T.micro, color: C.dim, minWidth: 34, textAlign: "right" }}>{relTime(e.at)}</span>
+                <span style={{ fontSize: T.caption, color: C.text, lineHeight: 1.5 }}>{e.text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Empty / guidance */}
       {!open.length && !closed.length && (
