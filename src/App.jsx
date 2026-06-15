@@ -283,6 +283,7 @@ function TradeIQ({ session }) {
   const [apIdeas,setApIdeas]=useState([]); // Nova's OWN idea pool (not the shared board)
   const [decisions,setDecisions]=useState([]); // Founder Memory Graph — recorded strategy decisions
   const [apMemory,setApMemory]=useState([]); // Opportunity Memory — surfaced candidates + their fate
+  const [apNews,setApNews]=useState([]); // recent headlines feeding WORLD news-catalyst candidates
   const apPhaseRef=useRef({phase:"scan",ticker:null,verdict:null,cooldownUntil:0});
   const apTickRef=useRef(null);
 
@@ -731,7 +732,37 @@ function TradeIQ({ session }) {
       setApMemory(refreshed);
     }catch(e){}
   };
-  useEffect(()=>{ if(tab==="cio") recordMemory(); },[tab]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Pull recent headlines for a capped, India-first set of watchlist names → WORLD
+  // news-catalyst candidates. Once per session (news is 60/hr rate-limited).
+  const apNewsRef=useRef(false);
+  const fetchWorldNews=async()=>{
+    try{
+      const names=[...INDIA_WATCHLIST,...US_WATCHLIST].filter(w=>w.price!=null).slice(0,8); // India-first, capped
+      if(!names.length) return;
+      let token=null; if(SUPABASE_READY){try{const {data}=await db.auth.getSession();token=data.session?.access_token??null;}catch{}}
+      const hdrs=token?{Authorization:`Bearer ${token}`}:undefined;
+      const res=await Promise.all(names.map(w=>fetch(`/api/news?ticker=${encodeURIComponent(w.ticker)}`,{headers:hdrs}).then(r=>r.json()).then(d=>({ticker:w.ticker,top:(d.news||[])[0]})).catch(()=>null)));
+      const flat=[]; for(const r of res){ if(r&&r.top&&r.top.title) flat.push({ticker:r.ticker,title:r.top.title,publisher:r.top.publisher,providerPublishTime:r.top.providerPublishTime}); }
+      setApNews(flat);
+    }catch(e){}
+  };
+  // Investigate a WORLD research candidate → route it into the real pipeline:
+  // ensure an opportunity exists for it, mark it investigated, open Research Workspace.
+  const investigateCandidate=async(lead)=>{
+    if(!lead?.ticker) return;
+    let opp=opportunities.find(o=>o.ticker===lead.ticker&&!["archived","dismissed"].includes(o.status));
+    if(!opp){
+      const px=apPriceOf(lead.ticker); const cur=liveData[lead.ticker]?.currency||inferCurrency(lead.ticker);
+      const row={user_id:userId,ticker:lead.ticker,name:liveData[lead.ticker]?.name||lead.ticker,currency:cur,reality_hypothesis:(lead.reasons&&lead.reasons[0])||lead.title||null,risk_level:"medium",price_at_gen:px,status:"new"};
+      try{ const {data}=await db.from("tradeiq_opportunities").insert(row).select().single(); if(data) opp=data; }catch(e){}
+      if(!opp) opp={...row,id:`local_${Date.now()}`,generated_at:new Date().toISOString()};
+      setOpportunities(p=>[opp,...p]);
+    }
+    setApMemory(p=>p.map(m=>m.ticker===lead.ticker&&m.status!=="traded"?{...m,status:"investigated"}:m));
+    try{ await db.from("tradeiq_opportunity_memory").update({status:"investigated",updated_at:new Date().toISOString()}).eq("ticker",lead.ticker).neq("status","traded"); }catch(e){}
+    setResearchOpp(opp); // opens the Research Workspace overlay (→ run AI research → council)
+  };
+  useEffect(()=>{ if(tab==="cio"){ recordMemory(); if(!apNewsRef.current){ apNewsRef.current=true; fetchWorldNews(); } } },[tab]); // eslint-disable-line react-hooks/exhaustive-deps
   const _apRound=(n)=>Math.round((Number(n)||0)*100)/100;
   const ensurePaperAccount=async()=>{
     if(paperAcct) return paperAcct;
@@ -1394,7 +1425,7 @@ Currently viewing: ${marketTab==="us"?"US NYSE/NASDAQ":"India NSE"}. Be specific
         {TABS.map(t=>(<button key={t.id} className="tiq-btn tiq-tab" onClick={()=>setTab(t.id)} aria-current={tab===t.id?"page":undefined} style={{padding:"11px 13px",fontSize:12,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",fontFamily:C.display,background:tab===t.id?C.accent+"12":"none",border:"none",borderRadius:"8px 8px 0 0",borderBottom:tab===t.id?`2px solid ${C.accent}`:"2px solid transparent",color:tab===t.id?C.accent:C.muted,whiteSpace:"nowrap"}}>{t.l}</button>))}
       </div>
       <div key={tab} className="tab-in tiq-main" style={{padding:18,maxWidth:1240,margin:"0 auto"}}>
-        {tab==="council"&&<div className="tiq-bleed tiq-fit-full" style={{minHeight:480}}><Council theme={C} db={db} supabaseReady={SUPABASE_READY} userId={userId} holdings={holdings} journal={journal} reviews={Object.values(reviews)} opportunities={opportunities} watchlist={[...US_WATCHLIST,...INDIA_WATCHLIST]} request={councilRequest} onRequestConsumed={()=>setCouncilRequest(null)} onVerdict={handleCouncilVerdict}/></div>}{tab==="perf"&&<Performance journal={journal} reviews={Object.values(reviews)} opportunities={opportunities} userId={userId} theme={C}/>}{tab==="opps"&&Opportunities()}{tab==="dash"&&Dashboard()}{tab==="cio"&&<OpportunityQueue world={worldCandidates({watchlist:[...US_WATCHLIST,...INDIA_WATCHLIST],opportunities,holdings})} portfolio={opportunityQueue({holdings,journal,opportunities,decisions,now:Date.now(),fx:FX})} gated={gatedInsights({journal})} memory={apMemory} memoryStats={memoryStats(apMemory)}/>}{tab==="autopilot"&&<Autopilot account={paperAcct} trades={paperTrades} stats={accountStats(paperAcct||{cash:0,starting_cash:100000},paperTrades,apPriceOf)} busy={apBusy} msg={apMsg} priceOf={apPriceOf} onRun={runAutopilot} onCouncilRun={runAutopilotWithCouncil} onSeed={seedBacktest} onReset={resetDemo} live={apLive} feed={apFeed} onToggleLive={toggleLive} ideas={apIdeas} councilReadyCount={opportunities.filter(o=>(o.council_verdict==="Strong Buy"||o.council_verdict==="Buy")&&(o.council_confidence??0)>=60).length}/>}{tab==="ai"&&AIChat()}{tab==="scanner"&&Scanner()}{tab==="chart"&&<div className="tiq-bleed tiq-fit-full"><ChartView ticker={chartTicker} market={marketTab} onClose={null}/></div>}{tab==="strategies"&&StrategiesTab()}{tab==="journal"&&JournalTab()}{tab==="decisions"&&<Decisions decisions={decisions} onAdd={addDecision} onSetActive={setDecisionActive}/>}{tab==="learn"&&Learn()}
+        {tab==="council"&&<div className="tiq-bleed tiq-fit-full" style={{minHeight:480}}><Council theme={C} db={db} supabaseReady={SUPABASE_READY} userId={userId} holdings={holdings} journal={journal} reviews={Object.values(reviews)} opportunities={opportunities} watchlist={[...US_WATCHLIST,...INDIA_WATCHLIST]} request={councilRequest} onRequestConsumed={()=>setCouncilRequest(null)} onVerdict={handleCouncilVerdict}/></div>}{tab==="perf"&&<Performance journal={journal} reviews={Object.values(reviews)} opportunities={opportunities} userId={userId} theme={C}/>}{tab==="opps"&&Opportunities()}{tab==="dash"&&Dashboard()}{tab==="cio"&&<OpportunityQueue world={worldCandidates({watchlist:[...INDIA_WATCHLIST,...US_WATCHLIST],opportunities,holdings,news:apNews})} portfolio={opportunityQueue({holdings,journal,opportunities,decisions,now:Date.now(),fx:FX})} gated={gatedInsights({journal})} memory={apMemory} memoryStats={memoryStats(apMemory)} onInvestigate={investigateCandidate}/>}{tab==="autopilot"&&<Autopilot account={paperAcct} trades={paperTrades} stats={accountStats(paperAcct||{cash:0,starting_cash:100000},paperTrades,apPriceOf)} busy={apBusy} msg={apMsg} priceOf={apPriceOf} onRun={runAutopilot} onCouncilRun={runAutopilotWithCouncil} onSeed={seedBacktest} onReset={resetDemo} live={apLive} feed={apFeed} onToggleLive={toggleLive} ideas={apIdeas} councilReadyCount={opportunities.filter(o=>(o.council_verdict==="Strong Buy"||o.council_verdict==="Buy")&&(o.council_confidence??0)>=60).length}/>}{tab==="ai"&&AIChat()}{tab==="scanner"&&Scanner()}{tab==="chart"&&<div className="tiq-bleed tiq-fit-full"><ChartView ticker={chartTicker} market={marketTab} onClose={null}/></div>}{tab==="strategies"&&StrategiesTab()}{tab==="journal"&&JournalTab()}{tab==="decisions"&&<Decisions decisions={decisions} onAdd={addDecision} onSetActive={setDecisionActive}/>}{tab==="learn"&&Learn()}
       </div>
       {researchOpp&&<ResearchWorkspace opp={researchOpp} theme={C} onSave={saveResearch} onCreateTrade={(o)=>{critiqueAndLog(o);setResearchOpp(null);}} onClose={()=>setResearchOpp(null)} onRunResearch={researchOpportunity} researching={researchingId===researchOpp.id} onIngestFiling={ingestFiling} ingestingAcc={ingestingAcc} onFilingEvent={logFiling}/>}
 

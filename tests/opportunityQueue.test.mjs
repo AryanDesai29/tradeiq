@@ -108,6 +108,34 @@ test("worldCandidates respects the limit and sorts by priority", () => {
   for (let i = 1; i < w.length; i++) assert.ok(w[i - 1].priority >= w[i].priority);
 });
 
+test("worldCandidates: news catalyst surfaced as a fact, never a trade signal", () => {
+  const news = [{ ticker: "TCS.NS", title: "TCS wins large cloud deal", publisher: "Reuters", providerPublishTime: 1781000000 }];
+  const w = worldCandidates({ watchlist: [{ ticker: "TCS.NS", currency: "INR", price: 100 }], news });
+  const lead = w.find((l) => l.kind === "news_catalyst");
+  assert.ok(lead);
+  assert.match(lead.reasons.join(" "), /Reuters.*cloud deal/);
+  assert.match(lead.reasons.join(" "), /Headline is a fact/);
+  assert.ok(!/buy|will outperform/i.test(JSON.stringify(lead)));
+});
+
+test("worldCandidates: Indian names rank first (India-first priority)", () => {
+  const watchlist = [
+    { ticker: "AAPL", currency: "USD", price: 100, ema20: 95, ema200: 90, rsi: 60 },       // US RS leader
+    { ticker: "TCS.NS", currency: "INR", price: 100, ema20: 95, ema200: 90, rsi: 60 },     // India RS leader (equal raw signal)
+  ];
+  const w = worldCandidates({ watchlist });
+  assert.equal(w[0].ticker, "TCS.NS");   // India ranks ahead of the equal-signal US name
+});
+
+test("worldCandidates: one card per ticker (highest-priority kind wins)", () => {
+  // TCS.NS is both an RS leader AND in the news → a single card, not two.
+  const w = worldCandidates({
+    watchlist: [{ ticker: "TCS.NS", currency: "INR", price: 100, ema20: 95, ema200: 90, rsi: 60 }],
+    news: [{ ticker: "TCS.NS", title: "headline", publisher: "X", providerPublishTime: 1781000000 }],
+  });
+  assert.equal(w.filter((l) => l.ticker === "TCS.NS").length, 1);
+});
+
 test("gatedInsights locks pattern claims until enough closed trades", () => {
   assert.equal(gatedInsights({ journal: [] }).length, 1);
   assert.equal(gatedInsights({ journal: [] })[0].locked, true);

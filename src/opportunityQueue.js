@@ -116,37 +116,58 @@ export function opportunityQueue({ holdings = [], journal = [], opportunities = 
 //   momentum leaders from the watchlist's live prices.
 //   V2 (deferred, per docs/ARCHITECTURE-PILLARS.md): insider Form 4, XBRL
 //   buybacks, earnings revisions via EDGAR (US) — once proven worthwhile.
-export function worldCandidates({ watchlist = [], opportunities = [], holdings = [], limit = 6 } = {}) {
+const isIndian = (ticker, currency) => (currency === "INR" || /\.(NS|BO)$/i.test(ticker || "")) ? 1 : 0;
+const INDIA_BONUS = 15; // India-first: Indian names rank ahead of equal-priority US names
+
+export function worldCandidates({ watchlist = [], opportunities = [], holdings = [], news = [], limit = 8 } = {}) {
   const held = new Set(holdings.map((h) => h.ticker));
   const oppTickers = new Set(opportunities.map((o) => o.ticker));
+  const wl = Object.fromEntries(watchlist.map((w) => [w.ticker, w]));
   const out = [];
+  const push = (lead, currency) => { const india = isIndian(lead.ticker, currency); out.push({ ...lead, _india: india, priority: clamp(lead.priority + india * INDIA_BONUS) }); };
 
   // (a) AI-surfaced ideas the investor hasn't acted on yet.
   for (const o of opportunities) {
     const undecided = !["logged", "archived", "dismissed"].includes(o.status) && !o.research_brief;
     if (undecided && !held.has(o.ticker)) {
-      out.push({ id: `world_opp_${o.id || o.ticker}`, source: "world", kind: "discovered_idea", ticker: o.ticker, status: "research_candidate",
+      push({ id: `world_opp_${o.id || o.ticker}`, source: "world", kind: "discovered_idea", ticker: o.ticker, status: "research_candidate",
         title: `${shortName(o.ticker)} — ${o.thesis_type || "idea"} (AI-surfaced)`,
         reasons: [o.reality_hypothesis || o.market_expectations || "Surfaced by Opportunity Discovery", o.confidence != null ? `Model conviction ${o.confidence}%` : null].filter(Boolean),
-        action: "Investigate (research → council)", priority: clamp(40 + (o.confidence || 0) * 0.3) });
+        action: "Investigate", priority: clamp(40 + (o.confidence || 0) * 0.3) }, o.currency);
     }
   }
 
-  // (b) Relative-strength leaders from live prices — uptrend with room, not held,
-  // not already on the board. Deterministic, India-friendly, never a "buy".
+  // (b) News catalysts — a dated headline is a FACT to read, never a trade signal.
+  const byTicker = {};
+  for (const n of news) { if (n && n.ticker && n.title && !byTicker[n.ticker]) byTicker[n.ticker] = n; }
+  for (const [ticker, n] of Object.entries(byTicker)) {
+    if (held.has(ticker)) continue;
+    const when = n.providerPublishTime ? new Date(n.providerPublishTime * 1000).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "";
+    push({ id: `world_news_${ticker}`, source: "world", kind: "news_catalyst", ticker, status: "research_candidate",
+      title: `${shortName(ticker)} — in the news`,
+      reasons: [`${n.publisher || "News"}${when ? ` (${when})` : ""}: ${n.title}`, "Headline is a fact — read it, don't assume the trade"],
+      action: "Investigate", priority: 55 }, wl[ticker]?.currency);
+  }
+
+  // (c) Relative-strength leaders from live prices — uptrend with room.
   for (const w of watchlist) {
     if (!w || w.price == null || held.has(w.ticker) || oppTickers.has(w.ticker)) continue;
     const uptrend = w.ema200 && w.ema20 && w.price > w.ema200 && w.ema20 > w.ema200;
     if (uptrend && w.rsi >= 52 && w.rsi <= 66) {
-      out.push({ id: `world_rs_${w.ticker}`, source: "world", kind: "rs_leader", ticker: w.ticker, status: "research_candidate",
+      push({ id: `world_rs_${w.ticker}`, source: "world", kind: "rs_leader", ticker: w.ticker, status: "research_candidate",
         title: `${shortName(w.ticker)} — momentum / relative-strength leader`,
         reasons: ["Price above 200-EMA; 20-EMA above 200-EMA (established uptrend)", `RSI ${w.rsi} — strength with room to run`, w.chg != null ? `${w.chg >= 0 ? "+" : ""}${w.chg}% today` : null].filter(Boolean),
-        action: "Investigate (research → council)", priority: clamp(35 + (w.rsi - 52) * 1.2) });
+        action: "Investigate", priority: clamp(35 + (w.rsi - 52) * 1.2) }, w.currency);
     }
   }
 
-  out.sort((a, b) => b.priority - a.priority);
-  return out.slice(0, limit);
+  // One card per ticker (highest priority wins), then India-first, then priority.
+  const best = new Map();
+  for (const l of out) { const cur = best.get(l.ticker); if (!cur || l.priority > cur.priority) best.set(l.ticker, l); }
+  return [...best.values()]
+    .sort((a, b) => (b._india - a._india) || (b.priority - a.priority))
+    .slice(0, limit)
+    .map(({ _india, ...l }) => l);
 }
 
 // Statistical insights are LOCKED until the track record can support them — we
