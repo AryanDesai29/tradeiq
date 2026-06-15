@@ -18,15 +18,16 @@
 
 import { findConflicts, decisionLabel } from "./decisions.js";
 import { shortName } from "./stock.js";
+import { positionValue } from "./valuation.js";
 
 const DAY = 86400000;
 const clamp = (n) => Math.max(0, Math.min(100, Math.round(Number(n) || 0)));
 const daysSince = (d, now) => (d ? Math.floor((now - new Date(d).getTime()) / DAY) : null);
 
-export function opportunityQueue({ holdings = [], journal = [], opportunities = [], decisions = [], now = 0, fx = { USD: 1, INR: 1 / 84 } } = {}) {
+export function opportunityQueue({ holdings = [], journal = [], opportunities = [], decisions = [], now = 0 } = {}) {
   if (!now) now = 0; // caller passes Date.now(); 0 only in degenerate test cases
   const leads = [];
-  const val = (h) => (Number(h.shares) || 0) * (Number(h.price) || 0) * (fx[h.currency] || 1);
+  const val = (h) => positionValue(h).inr; // normalized to INR via the single valuation path
   const total = holdings.reduce((s, h) => s + val(h), 0) || 0;
   const held = new Set(holdings.map((h) => h.ticker));
   const lastActivity = {};
